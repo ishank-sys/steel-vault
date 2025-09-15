@@ -1,0 +1,85 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Client {
+  id              Int          @id @default(autoincrement())
+  name            String
+  email           String?      @unique
+  companyName     String?
+  contactNo       String?
+  address         String?
+  dbUrl           String?      @map("DB_URL")
+  configuration   Json         @default("{}")
+  ccListData      Json         @default("[]")
+  folderStructure Json         @default("{}")
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  users           User[]       @relation("ClientUsers")
+  projects        Project[]    @relation("ClientProjects")
+  documentLogs    DocumentLog[]
+}
+
+model User {
+  id          Int       @id @default(autoincrement())
+  name        String
+  email       String    @unique
+  password    String
+  userType    String    // e.g. 'admin', 'client'
+  clientId    Int?
+  contactNo   String?
+  address     String?
+  gender      String?
+  client      Client?   @relation("ClientUsers", fields: [clientId], references: [id])
+  createdAt   DateTime  @default(now())
+  relievedDate DateTime?
+  solTLProjects Project[] @relation("UserSolTL")
+}
+model Project {
+  id                   Int          @id @default(autoincrement())
+  projectNo            String       @unique
+  name                 String
+  description          String?
+  clientId             Int
+  client               Client       @relation("ClientProjects", fields: [clientId], references: [id])
+  estimatedBy          String?
+  estimationDate       DateTime?
+  totalProjectHours    String?
+  totalSheetQty        String?
+  fabricatorJobNo      String?
+  fabricatorName       String?
+  solJobNo             String?
+  jobName              String?
+  projectType          String?
+  projectSubType       String?
+  solTLId              Int?
+  solTL                User?        @relation("UserSolTL", fields: [solTLId], references: [id])
+  fabricatorPMName     String?
+  weightTonnage        String?
+  latestSubmission     DateTime?
+  projectDataFolder    String?
+  projectStatusReport  String?
+  projectIFCProgressChart String?
+  estimationRows       Json         @default("[]")
+  createdAt            DateTime     @default(now())
+  documentLogs         DocumentLog[]
+}
+
+model DocumentLog {
+  id          Int      @id @default(autoincrement())
+  fileName    String
+  clientId    Int
+  projectId   Int
+  storagePath String
+  size        Int
+  uploadedAt  DateTime @default(now())
+  logType     String?  // e.g. 'UPLOAD_NEW', 'NAVIGATE_EXISTING'
+
+  client      Client   @relation(fields: [clientId], references: [id])
+  project     Project  @relation(fields: [projectId], references: [id])
+}
