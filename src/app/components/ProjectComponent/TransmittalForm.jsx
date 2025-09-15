@@ -650,20 +650,33 @@ const handlePublish = async () => {
       console.debug('Publishing transmittal with', { projectNo, projectIdToSend, clientId });
     } catch (e) {}
 
-    const fd = new FormData();
-    fd.append('file', new File([content], `${zipName || 'Transmittal'}.zip`, { type: 'application/zip' }));
-    if (projectIdToSend) fd.append('projectId', String(projectIdToSend));
-    else if (projectNo) fd.append('projectId', String(projectNo));
-    if (clientId) fd.append('clientId', String(clientId));
+    // Upload ZIP via signed URL (avoid streaming on the server)
+    const zipFile = new File([content], `${zipName || 'Transmittal'}.zip`, { type: 'application/zip' });
+    try {
+      // 1) request signed URL
+      const r = await fetch('/api/upload-url', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ filename: zipFile.name, contentType: zipFile.type, clientId, projectId: projectIdToSend || projectNo }),
+      });
+      if (!r.ok) throw new Error('Failed to get upload URL');
+      const { uploadUrl, destinationPath } = await r.json();
 
-    const res = await fetch('/api/upload', { method: 'POST', body: fd });
-    if (res.ok) {
-      const data = await res.json();
-      setPublishResult({ success: true, data });
+      // 2) PUT to GCS
+      const put = await fetch(uploadUrl, { method: 'PUT', headers: { 'content-type': zipFile.type }, body: zipFile });
+      if (!put.ok) throw new Error(`Upload failed: ${put.status}`);
+
+      // 3) log via API
+      const logRes = await fetch('/api/upload-log', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ clientId, projectId: projectIdToSend, originalName: zipFile.name, storagePath: `gs://${process.env.NEXT_PUBLIC_GCS_BUCKET || ''}/${destinationPath}`, size: zipFile.size }),
+      });
+      const logJson = await logRes.json().catch(() => ({}));
+      setPublishResult({ success: true, data: logJson });
       setShowPublishModal(true);
-    } else {
-      const errText = await res.text();
-      setPublishResult({ success: false, error: errText });
+    } catch (e) {
+      setPublishResult({ success: false, error: e?.message || String(e) });
       setShowPublishModal(true);
     }
   } catch (e) {

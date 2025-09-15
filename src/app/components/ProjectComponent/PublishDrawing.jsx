@@ -36,28 +36,43 @@ const formatRegexMap = {
 };
 
 const uploadFileToS3 = async (file, { projectId = null, clientId = null } = {}) => {
-  const formData = new FormData();
-  formData.append("file", file);
-  if (projectId) formData.append("projectId", projectId);
-  if (clientId) formData.append("clientId", clientId);
-
-  const res = await fetch("/api/upload", {
-    method: "POST",
-    body: formData,
+  // 1) Request signed upload URL from the server
+  const r = await fetch('/api/upload-url', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      filename: file.name,
+      contentType: file.type,
+      clientId,
+      projectId,
+    }),
   });
+  if (!r.ok) throw new Error('Failed to get upload URL');
+  const { uploadUrl, destinationPath } = await r.json();
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Upload failed: ${res.status} ${text}`);
-  }
+  // 2) PUT directly to GCS using the signed URL
+  const put = await fetch(uploadUrl, {
+    method: 'PUT',
+    headers: { 'content-type': file.type || 'application/octet-stream' },
+    body: file,
+  });
+  if (!put.ok) throw new Error(`Upload failed: ${put.status}`);
 
-  const data = await res.json().catch(() => ({}));
-  if (data.url) {
-    return data.url;
-  } else {
-    // return the whole response object if url not present
-    return data;
-  }
+  // 3) Notify server to log upload metadata
+  const logRes = await fetch('/api/upload-log', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      clientId,
+      projectId,
+      originalName: file.name,
+      storagePath: `gs://${process.env.NEXT_PUBLIC_GCS_BUCKET || ''}/${destinationPath}`,
+      size: file.size,
+    }),
+  });
+  const logJson = await logRes.json().catch(() => ({}));
+
+  return { destinationPath, record: logJson?.record };
 };
 
 const PublishDrawing = () => {

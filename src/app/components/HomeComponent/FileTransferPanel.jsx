@@ -128,22 +128,31 @@ export default function FileTransferPanel() {
               setLoading(true);
               setResultMsg('');
               try {
-                const fd = new FormData();
-                fd.append('file', selectedFile);
-                fd.append('clientId', selectedClientId);
-                fd.append('userId', selectedUserId);
-                fd.append('projectId', selectedProjectId);
+                // Use signed URL flow: request upload url, PUT file, then log
+                try {
+                  const r = await fetch('/api/upload-url', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({ filename: selectedFile.name, contentType: selectedFile.type, clientId: selectedClientId, projectId: selectedProjectId }),
+                  });
+                  if (!r.ok) throw new Error('Failed to get upload URL');
+                  const { uploadUrl, destinationPath } = await r.json();
 
-                const res = await fetch('/api/upload', {
-                  method: 'POST',
-                  body: fd,
-                });
+                  const put = await fetch(uploadUrl, { method: 'PUT', headers: { 'content-type': selectedFile.type || 'application/octet-stream' }, body: selectedFile });
+                  if (!put.ok) throw new Error(`Upload failed: ${put.status}`);
 
-                const data = await res.json();
-                if (!res.ok) throw new Error(data?.error || 'Upload failed');
-                setResultMsg(`Uploaded: ${data.path || 'ok'}`);
-                // store returned record (if any) so user can request a signed URL
-                if (data.record) setLastUploaded(data.record);
+                  const logRes = await fetch('/api/upload-log', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({ clientId: selectedClientId, projectId: selectedProjectId, originalName: selectedFile.name, storagePath: `gs://${process.env.NEXT_PUBLIC_GCS_BUCKET || ''}/${destinationPath}`, size: selectedFile.size }),
+                  });
+                  const logJson = await logRes.json().catch(() => ({}));
+                  setResultMsg(`Uploaded: ${destinationPath}`);
+                  if (logJson?.record) setLastUploaded(logJson.record);
+                } catch (err) {
+                  console.error('Upload error', err);
+                  setResultMsg(err.message || String(err));
+                }
                } catch (err) {
                  console.error('Upload error', err);
                  setResultMsg(err.message || String(err));
