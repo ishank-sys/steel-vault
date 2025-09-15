@@ -1,6 +1,4 @@
 import { Storage } from '@google-cloud/storage';
-import fs from 'fs';
-import path from 'path';
 
 let storage = null;
 
@@ -22,21 +20,9 @@ export function getGCSStorage() {
     universe_domain: "googleapis.com"
   };
 
-  // Create temporary credentials file
-  const tempDir = path.join(process.cwd(), 'temp');
-  if (!fs.existsSync(tempDir)) {
-    fs.mkdirSync(tempDir);
-  }
-
-  const credentialsPath = path.join(tempDir, 'gcs-credentials.json');
-  fs.writeFileSync(credentialsPath, JSON.stringify(credentials, null, 2));
-
-  // Set environment variable for Google Cloud
-  process.env.GOOGLE_APPLICATION_CREDENTIALS = credentialsPath;
-
   storage = new Storage({
     projectId: process.env.GCS_PROJECT_ID,
-    keyFilename: credentialsPath
+    credentials: credentials
   });
 
   return storage;
