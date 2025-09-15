@@ -1,11 +1,8 @@
 import { NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
-import { Storage } from "@google-cloud/storage";
+import { getGCSStorage } from "../../lib/gcs";
 
 const prisma = new PrismaClient();
-
-// Use ADC: on GCP (Cloud Run) attach a service account. Locally use GOOGLE_APPLICATION_CREDENTIALS.
-const storage = new Storage(); // ← no explicit credentials here
 const GCS_BUCKET = process.env.GCS_BUCKET;
 
 export async function GET(req) {
@@ -40,6 +37,7 @@ export async function POST(req) {
       console.warn("GCS_BUCKET not set; skipping GCS folder creation.");
     } else {
       try {
+        const storage = getGCSStorage();
         // build a safe prefix
         const safeName = (client.name || "client").replace(/[^\w\-]+/g, "-").toLowerCase();
         const folderName = `clients/${client.id}-${safeName}-${Date.now()}`;

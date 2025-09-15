@@ -1,0 +1,43 @@
+import { Storage } from '@google-cloud/storage';
+import fs from 'fs';
+import path from 'path';
+
+let storage = null;
+
+export function getGCSStorage() {
+  if (storage) return storage;
+
+  // Create credentials object from environment variables
+  const credentials = {
+    type: "service_account",
+    project_id: process.env.GCS_PROJECT_ID,
+    private_key_id: process.env.GCS_PRIVATE_KEY_ID,
+    private_key: process.env.GCS_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+    client_email: process.env.GCS_CLIENT_EMAIL,
+    client_id: process.env.GCS_CLIENT_ID,
+    auth_uri: "https://accounts.google.com/o/oauth2/auth",
+    token_uri: "https://oauth2.googleapis.com/token",
+    auth_provider_x509_cert_url: "https://www.googleapis.com/oauth2/v1/certs",
+    client_x509_cert_url: process.env.GCS_CLIENT_X509_CERT_URL,
+    universe_domain: "googleapis.com"
+  };
+
+  // Create temporary credentials file
+  const tempDir = path.join(process.cwd(), 'temp');
+  if (!fs.existsSync(tempDir)) {
+    fs.mkdirSync(tempDir);
+  }
+
+  const credentialsPath = path.join(tempDir, 'gcs-credentials.json');
+  fs.writeFileSync(credentialsPath, JSON.stringify(credentials, null, 2));
+
+  // Set environment variable for Google Cloud
+  process.env.GOOGLE_APPLICATION_CREDENTIALS = credentialsPath;
+
+  storage = new Storage({
+    projectId: process.env.GCS_PROJECT_ID,
+    keyFilename: credentialsPath
+  });
+
+  return storage;
+}

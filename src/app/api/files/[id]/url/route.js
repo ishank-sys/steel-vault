@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
-import { Storage } from "@google-cloud/storage";
+import { getGCSStorage } from "../../../lib/gcs";
 
 const prisma = new PrismaClient();
-const storage = new Storage();
 const GCS_BUCKET = process.env.GCS_BUCKET;
 const SIGNED_URL_EXP_MIN = Number(process.env.SIGNED_URL_EXP_MIN || 15);
 
@@ -24,6 +23,7 @@ export async function GET(req, { params }) {
     }
 
     const expiresAt = Date.now() + SIGNED_URL_EXP_MIN * 60 * 1000;
+    const storage = getGCSStorage();
     const [url] = await storage
       .bucket(GCS_BUCKET)
       .file(objectPath)

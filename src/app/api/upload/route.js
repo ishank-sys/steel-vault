@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
-import { Storage } from "@google-cloud/storage";
+import { getGCSStorage } from "../../lib/gcs";
 
 const prisma = new PrismaClient();
-const storage = new Storage(); // uses ADC or GOOGLE_APPLICATION_CREDENTIALS
 const GCS_BUCKET = process.env.GCS_BUCKET;
 
 // POST → handle either JSON user-create (legacy) or multipart file upload
@@ -13,6 +12,7 @@ export async function POST(req) {
 
     // If multipart/form-data -> handle file upload to GCS
     if (contentType.includes("multipart/form-data")) {
+      const storage = getGCSStorage();
       if (!GCS_BUCKET) {
         return NextResponse.json({ error: "GCS_BUCKET not configured" }, { status: 500 });
       }
