@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
-import { getGCSStorage } from "../../lib/gcs";
+import { getGCSStorage } from "@/lib/gcs";
 
 const prisma = new PrismaClient();
 const GCS_BUCKET = process.env.GCS_BUCKET;
