@@ -1,0 +1,17 @@
+[
+  {
+    "origin": ["https://steel-vault.vercel.app", "http://localhost:3000"],
+    "method": ["GET","HEAD","OPTIONS"],
+    "responseHeader": [
+      "Content-Type",
+      "Content-Disposition",
+      "Content-Length",
+      "ETag",
+      "x-goog-generation",
+      "x-goog-metageneration",
+      "x-goog-storage-class",
+      "x-goog-hash"
+    ],
+    "maxAgeSeconds": 3600
+  }
+]
