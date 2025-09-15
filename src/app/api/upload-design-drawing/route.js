@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 import { getGCSStorage } from "@/lib/gcs";
+import { Readable } from 'stream';
+import { pipeline } from 'stream/promises';
 
 const prisma = new PrismaClient();
 const GCS_BUCKET = process.env.GCS_BUCKET;
@@ -77,8 +79,8 @@ export async function POST(req) {
       // Add design-drawings subfolder for design drawing uploads
       const destinationPath = `${clientFolder}/${projectFolder}/design-drawings/${destName}`;
 
-      const arrayBuffer = await file.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
+      // Get file size for logging
+      const fileSize = file.size || 0;
 
       const bucket = storage.bucket(GCS_BUCKET);
       const gcsFile = bucket.file(destinationPath);
@@ -92,10 +94,24 @@ export async function POST(req) {
         // ignore
       }
 
-      await gcsFile.save(buffer, {
+      // Convert Web ReadableStream to Node Readable and pipeline to GCS
+      const nodeStream = Readable.fromWeb(file.stream());
+      const writeStream = gcsFile.createWriteStream({
         resumable: false,
         contentType: file.type || 'application/octet-stream',
       });
+
+      const abortHandler = () => {
+        try { nodeStream.destroy?.(); } catch (e) {}
+        try { writeStream.destroy?.(); } catch (e) {}
+      };
+      req.signal?.addEventListener?.('abort', abortHandler);
+
+      try {
+        await pipeline(nodeStream, writeStream);
+      } finally {
+        req.signal?.removeEventListener?.('abort', abortHandler);
+      }
 
       // Do NOT make public. Persist the object path (private) in DB.
       const objectPath = destinationPath;
@@ -108,7 +124,7 @@ export async function POST(req) {
             clientId: client.id,
             projectId: projectId ? Number(projectId) : null,
             storagePath: objectPath,
-            size: buffer.length,
+            size: fileSize,
             logType,
           },
         });
