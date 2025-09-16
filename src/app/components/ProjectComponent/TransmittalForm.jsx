@@ -651,34 +651,39 @@ const handlePublish = async () => {
     } catch (e) {}
 
     // Upload ZIP via signed URL (avoid streaming on the server)
-    const zipFile = new File([content], `${zipName || 'Transmittal'}.zip`, { type: 'application/zip' });
-    try {
-      // 1) request signed URL
-      const r = await fetch('/api/upload-url', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ filename: zipFile.name, contentType: zipFile.type, clientId, projectId: projectIdToSend || projectNo }),
-      });
-      if (!r.ok) throw new Error('Failed to get upload URL');
-      const { uploadUrl, destinationPath } = await r.json();
+    // 🚫 No signed URL, no CORS. Send to our server; server streams to GCS.
+const zipFile = new File([content], `${zipName || 'Transmittal'}.zip`, { type: 'application/zip' });
 
-      // 2) PUT to GCS
-      const put = await fetch(uploadUrl, { method: 'PUT', headers: { 'content-type': zipFile.type }, body: zipFile });
-      if (!put.ok) throw new Error(`Upload failed: ${put.status}`);
+// Build form data for /api/upload (our Node runtime route.js)
+const form = new FormData();
+form.append('file', zipFile);
+if (clientId != null) form.append('clientId', String(clientId));
+if (projectIdToSend != null) form.append('projectId', String(projectIdToSend));
 
-      // 3) log via API
-      const logRes = await fetch('/api/upload-log', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ clientId, projectId: projectIdToSend, originalName: zipFile.name, storagePath: `gs://${process.env.NEXT_PUBLIC_GCS_BUCKET || ''}/${destinationPath}`, size: zipFile.size }),
-      });
-      const logJson = await logRes.json().catch(() => ({}));
-      setPublishResult({ success: true, data: logJson });
-      setShowPublishModal(true);
-    } catch (e) {
-      setPublishResult({ success: false, error: e?.message || String(e) });
-      setShowPublishModal(true);
-    }
+const headers = {};
+// If you want Code 1-style inference, pass the user’s email so the route can resolve client
+try {
+  const meRes = await fetch('/api/users/me');
+  if (meRes.ok) {
+    const me = await meRes.json();
+    if (me?.email) headers['x-user-email'] = me.email;
+  }
+} catch {}
+
+const upRes = await fetch('/api/upload', {
+  method: 'POST',
+  headers,           // DO NOT set Content-Type when sending FormData
+  body: form,
+});
+
+const upJson = await upRes.json().catch(() => ({}));
+if (!upRes.ok) {
+  setPublishResult({ success: false, error: upJson.error || upRes.statusText });
+} else {
+  setPublishResult({ success: true, data: upJson });
+}
+setShowPublishModal(true);
+
   } catch (e) {
     console.error('Publish failed', e);
     setPublishResult({ success: false, error: e?.message || String(e) });

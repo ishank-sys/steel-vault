@@ -145,6 +145,10 @@ export default function Sidebar() {
       {canShow('Clients') && (
         <CollapsibleGroup label="Clients">
           <SidebarItem
+            label="Dashboard"
+            href="/dashboard/home/dashboard"
+          />
+          <SidebarItem
             label="Change Password"
             href="/clients/change-password"
           />

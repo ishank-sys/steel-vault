@@ -9,6 +9,8 @@ const ViewFiles = () => {
   const [clients, setClients] = useState([]);
   const [selectedClientId, setSelectedClientId] = useState("");
   const [currentClientName, setCurrentClientName] = useState("");
+  const [projects, setProjects] = useState([]);
+  const [selectedProjectId, setSelectedProjectId] = useState("");
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -29,7 +31,18 @@ const ViewFiles = () => {
               if (client && client.id) {
                 setSelectedClientId(String(client.id));
                 setCurrentClientName(client.name || '');
-                fetchFiles(client.id);
+                // Fetch projects and show dropdown for client user
+                const resProj = await fetch(`/api/projects?clientId=${client.id}`);
+                const dataProj = await resProj.json();
+                setProjects(Array.isArray(dataProj) ? dataProj : []);
+                // Optionally auto-select first project and fetch files for it
+                if (Array.isArray(dataProj) && dataProj.length > 0) {
+                  setSelectedProjectId(""); // or setSelectedProjectId(dataProj[0].id) to auto-select first
+                  setFiles([]);
+                } else {
+                  setSelectedProjectId("");
+                  setFiles([]);
+                }
               }
             }
           }
@@ -44,10 +57,34 @@ const ViewFiles = () => {
     fetchClients();
   }, []);
 
-  const fetchFiles = async (clientId) => {
+  // Fetch projects for a client
+  const fetchProjects = async (clientId) => {
+    setProjects([]);
+    setSelectedProjectId("");
+    setFiles([]);
+    if (!clientId) return;
+    try {
+      const res = await fetch(`/api/projects?clientId=${clientId}`);
+      const data = await res.json();
+      setProjects(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Error fetching projects:", err);
+      setProjects([]);
+    }
+  };
+
+  const fetchFiles = async (clientId, projectId) => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/files?clientId=${clientId}`);
+      let url = `/api/files?clientId=${clientId}`;
+      if (projectId) {
+        // Find the project name from the projects array
+        const project = projects.find((p) => String(p.id) === String(projectId));
+        if (project && project.name) {
+          url += `&projectName=${encodeURIComponent(project.name)}`;
+        }
+      }
+      const res = await fetch(url);
       const data = await res.json();
       setFiles(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -61,8 +98,24 @@ const ViewFiles = () => {
   const handleClientChange = (e) => {
     const clientId = e.target.value;
     setSelectedClientId(clientId);
+    setSelectedProjectId("");
+    setProjects([]);
+    setFiles([]);
     if (clientId) {
-      fetchFiles(clientId);
+      fetchProjects(clientId);
+    } else {
+      setProjects([]);
+      setFiles([]);
+    }
+  };
+
+  const handleProjectChange = (e) => {
+    const projectId = e.target.value;
+    setSelectedProjectId(projectId);
+    if (selectedClientId && projectId) {
+      fetchFiles(selectedClientId, projectId);
+    } else if (selectedClientId) {
+      fetchFiles(selectedClientId);
     } else {
       setFiles([]);
     }
@@ -97,6 +150,26 @@ const ViewFiles = () => {
               </select>
             )}
           </div>
+
+          {/* Project dropdown, only show if projects exist */}
+          {projects.length > 0 && (
+            <div className="mb-4">
+              <label className="block text-lg font-medium mb-2">Project:</label>
+              <select
+                id="project-select"
+                value={selectedProjectId}
+                onChange={handleProjectChange}
+                className="border border-gray-300 rounded px-3 py-2 w-full"
+              >
+                <option value="">-- Select a Project --</option>
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {loading && <p className="text-gray-500">Loading files...</p>}
 
@@ -163,7 +236,7 @@ const ViewFiles = () => {
 
           {!loading && files.length === 0 && selectedClientId && (
             <p className="text-gray-500">
-              No files found for the selected client.
+              No files found for the selected client{selectedProjectId ? ' and project' : ''}.
             </p>
           )}
         </div>

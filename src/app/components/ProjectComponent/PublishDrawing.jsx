@@ -293,7 +293,7 @@ const PublishDrawing = () => {
         // store unfiltered projects
         if (mounted) setAllProjects(plist || []);
 
-        if (udata && udata.userType !== 'admin') {
+        if (udata && udata.userType && String(udata.userType).toLowerCase() !== 'admin') {
           const clientId = udata.clientId || udata.client?.id || udata.id;
           plist = (plist || []).filter(p => {
             return p.clientId === clientId || (p.client && p.client.id === clientId) || p.ownerId === clientId;
@@ -305,8 +305,8 @@ const PublishDrawing = () => {
         if (mounted) setClients(clist || []);
         if (mounted) setUser(udata);
 
-        // if a client is already selected (e.g., preselected above), filter now
-        if (selectedClientId) {
+        // Only filter by selectedClientId for non-admin users
+        if (selectedClientId && udata && udata.userType && String(udata.userType).toLowerCase() !== 'admin') {
           plist = (plist || []).filter(p => p.clientId === selectedClientId || (p.client && p.client.id === selectedClientId) || p.ownerId === selectedClientId);
         }
 

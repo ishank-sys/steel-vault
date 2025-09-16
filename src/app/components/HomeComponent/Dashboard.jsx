@@ -1,172 +1,121 @@
 "use client";
 
+
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import TableComponent from "../Table";
-import SearchFilter from "../SearchFilter";
-import Link from "next/link";
+import TableComponent from '../Table';
+import SearchFilter from '../SearchFilter';
+import Link from 'next/link';
 
 export default function Dashboard() {
-  const [data, setData] = useState([]);
+  const [projects, setProjects] = useState([]);
   const [filteredData, setFilteredData] = useState([]);
-  const router = useRouter();
+  const [lastSubmissionMap, setLastSubmissionMap] = useState({});
+  const [user, setUser] = useState(null);
+
+  // Fetch user, projects, and document logs
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        // Get current user info
+        const userRes = await fetch('/api/users/me');
+        const userData = await userRes.json();
+        setUser(userData);
+
+        // Get all projects and document logs
+        const [projRes, docLogRes] = await Promise.all([
+          fetch('/api/projects'),
+          fetch('/api/document-logs'),
+        ]);
+        let projects = await projRes.json();
+        const docLogs = await docLogRes.json();
+
+        // Filter projects based on user type
+        if (userData && userData.userType) {
+          const type = String(userData.userType).toLowerCase();
+          if (type.includes('employee')) {
+            // Only show projects where solTL.id === user.id
+            projects = (projects || []).filter(p => p.solTL?.id === userData.id);
+          } else if (type.includes('client')) {
+            // Only show projects where client.id === user.client.id
+            const clientId = userData.client?.id || userData.clientId;
+            projects = (projects || []).filter(p => p.client?.id === clientId);
+          }
+          // admin sees all
+        }
+
+        // Map projectId -> latest uploadedAt date
+        const map = {};
+        (Array.isArray(docLogs) ? docLogs : []).forEach(log => {
+          if (log.projectId) {
+            const prev = map[log.projectId];
+            const currDate = log.uploadedAt ? new Date(log.uploadedAt) : null;
+            if (currDate && (!prev || currDate > prev)) {
+              map[log.projectId] = currDate;
+            }
+          }
+        });
+        setLastSubmissionMap(map);
+        setProjects(Array.isArray(projects) ? projects : []);
+        setFilteredData(Array.isArray(projects) ? projects : []);
+      } catch (err) {
+        setProjects([]);
+        setFilteredData([]);
+        setLastSubmissionMap({});
+      }
+    }
+    fetchData();
+  }, []);
+
 
   const headers = [
-  "Client",
-  "Fabricator Job No",
-    "SOL Job No",
-    "Job Name",
-    "Project Type",
-    "Project Sub-Type",
-    "Fabricator PM Name",
-    "Weight (t)",
-    "Latest Submission",
+    "Project No",
+    "Project Name",
+    "Client",
+    "Weightage (t)",
+    "SOL TL",
+    "Last Submission"
   ];
 
   const keys = [
-    // 'client' and 'solTL' are objects; Table will render their .name
-    'client',
-    "fabricatorJobNo",
-    "solJobNo",
-    "jobName",
-    "projectType",
-    "projectSubType",
-    'solTL',
-    "fabricatorPMName",
+    "projectNo",
+    "name",
+    "clientName",
     "weightTonnage",
-    "latestSubmission",
+    "solTLName",
+    "lastSubmission"
   ];
 
-  useEffect(() => {
-    // Fetch current user and projects; if not admin, only show projects where solTL matches logged-in user
-    async function load() {
-      try {
-        const [meRes, projRes] = await Promise.all([fetch('/api/users/me'), fetch('/api/projects')]);
-        if (!meRes.ok || !projRes.ok) {
-          console.error('Failed to fetch user or projects');
-          return;
-        }
-        const me = await meRes.json();
-        const projects = await projRes.json();
-
-        let visible = projects;
-        if (me && me.userType && me.userType.toLowerCase() !== 'admin') {
-          // filter by solTL match (prefer id, fallback to name)
-          visible = projects.filter((p) => {
-            if (!p.solTL) return false;
-            if (me.id && p.solTL.id && Number(p.solTL.id) === Number(me.id)) return true;
-            if (me.name && p.solTL.name && p.solTL.name === me.name) return true;
-            return false;
-          });
-        }
-
-        setData(visible);
-        setFilteredData(visible);
-      } catch (error) {
-        console.error('❌ Error fetching user/projects:', error);
-      }
-    }
-
-    load();
-  }, []);
+  // Map projects to add clientName, solTLName, and lastSubmission for table
+  const tableData = filteredData.map((p) => ({
+    ...p,
+    clientName: p.client?.name || p.clientName || "-",
+    solTLName: p.solTL?.name || p.solTLName || "-",
+    lastSubmission: lastSubmissionMap[p.id]
+      ? new Date(lastSubmissionMap[p.id]).toLocaleDateString()
+      : "-"
+  }));
 
   return (
     <div className="p-6">
       <SearchFilter
-        data={data}
-        searchFields={[
-          "client",
-          "fabricatorJobNo",
-          "solJobNo",
-          "jobName",
-          "projectType",
-          "projectSubType",
-          "fabricatorPMName",
-          "weightTonnage",
-          "latestSubmission",
-        ]}
+        data={projects}
+        searchFields={["projectNo", "name", "clientName", "weightTonnage"]}
         onFilteredDataChange={setFilteredData}
       />
       <div className="p-4 bg-white mt-6">
         <TableComponent
-          headers={headers}
+          headers={[...headers, "Document Log"]}
           keys={keys}
-          data={filteredData}
-          cellClickHandlers={{
-            latestSubmission: (row) =>
-              router.push(`/dashboard/home/dashboard/latestsubmission/${row.latestSubmission}`),
-          }}
+          data={tableData}
           customColumns={[
             {
-              header: "Project Data Folder",
+              header: '',
               render: (row) => (
                 <Link
-                  href={`/dashboard/home/dashboard/projectdatafolder/${row.projectDataFolder}`}
-                  className="hover:text-blue-600"
+                  href={`/dashboard/documentlog/${row.id}`}
+                  className="text-blue-600 underline"
                 >
-                  Open
-                </Link>
-              ),
-            },
-            {
-              header: 'Project File',
-              render: (row) => (
-                <button
-                  onClick={async (e) => {
-                    e.preventDefault();
-                    try {
-                      // fetch document logs for this project
-                      const logsRes = await fetch(`/api/document-logs`);
-                      if (!logsRes.ok) throw new Error('Failed to fetch logs');
-                      const logs = await logsRes.json();
-                      const first = logs.find(l => l.projectId === row.id);
-                      if (!first) {
-                        alert('No files available for this project');
-                        return;
-                      }
-
-                      // request signed url for this object's storagePath
-                      const signedRes = await fetch('/api/gcs/signed-url', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ path: first.storagePath, expiresSeconds: 300 }),
-                      });
-                      const signed = await signedRes.json();
-                      if (signed && signed.url) {
-                        window.open(signed.url, '_blank');
-                      } else {
-                        alert('Failed to get download URL');
-                      }
-                    } catch (err) {
-                      console.error(err);
-                      alert('Download failed');
-                    }
-                  }}
-                  className="text-blue-600 hover:underline"
-                >
-                  Download
-                </button>
-              ),
-            },
-            {
-              header: "Project Status Report",
-              render: (row) => (
-                <Link
-                  href={`/dashboard/home/dashboard/projectstatusreport/${row.projectStatusReport}`}
-                  className="hover:text-blue-600"
-                >
-                  Open
-                </Link>
-              ),
-            },
-            {
-              header: "Project IFC Progress Chart",
-              render: (row) => (
-                <Link
-                  href={`/dashboard/home/dashboard/projectifc/${row.projectIFCProgressChart}`}
-                  className="hover:text-blue-600"
-                >
-                  Open
+                  View Log
                 </Link>
               ),
             },
