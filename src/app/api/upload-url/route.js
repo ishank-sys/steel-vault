@@ -1,73 +1,54 @@
-import { getGCSStorage } from '@/lib/gcs';
+import { NextResponse } from "next/server";
+export const runtime = "nodejs";
+import { PrismaClient } from "@prisma/client";
+import { getGCSStorage } from "@/lib/gcs";
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
-const storage = getGCSStorage();
+const prisma = new PrismaClient();
 const GCS_BUCKET = process.env.GCS_BUCKET;
 
-const setCORSHeaders = (response) => {
-  response.headers.set('Access-Control-Allow-Origin', '*');
-  response.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  response.headers.set('Access-Control-Allow-Headers', 'Content-Type');
-  return response;
-};
+const slugify = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,80);
 
-// Updated signed URL generation logic to exclude unnecessary headers
 export async function POST(req) {
   try {
     const { filename, contentType, clientId, projectId } = await req.json();
 
-    if (!GCS_BUCKET) {
-      return new Response(JSON.stringify({ error: 'GCS_BUCKET not configured' }), {
-        status: 500,
-        headers: { 'content-type': 'application/json' },
-      });
+    if (!filename || !contentType) {
+      return NextResponse.json({ error: "filename and contentType required" }, { status: 400 });
     }
 
-    const now = Date.now();
-    const destName = `${now}_${filename}`;
-    const clientFolder = `clients/${clientId ?? 'unknown'}`;
-    const projectFolder = `${projectId ?? 'unknown'}`;
-    const destinationPath = `${clientFolder}/${projectFolder}/${destName}`;
-
+    // Build folders similar to your server route (lightweight; no heavy DB lookups)
+    let clientFolder = clientId ? `clients/${clientId}` : "clients/unknown";
     try {
-      const [url] = await storage
-        .bucket(GCS_BUCKET)
-        .file(destinationPath)
-        .getSignedUrl({
-          version: 'v4',
-          action: 'read',
-          expires: Date.now() + 10 * 60 * 1000, // 10 minutes
-          // Only include headers that will be sent
-          headers: { host: 'storage.googleapis.com' },
-        });
+      if (clientId) {
+        const client = await prisma.client.findUnique({ where: { id: Number(clientId) } });
+        if (client?.name) clientFolder = `clients/${client.id}-${slugify(client.name)}`;
+      }
+    } catch {}
 
-      return new Response(JSON.stringify({ uploadUrl: url, destinationPath }), {
-        headers: { 'content-type': 'application/json' },
-      });
-    } catch (gcsErr) {
-      return new Response(JSON.stringify({ error: 'Failed to generate signed URL', debug: gcsErr.message }), {
-        status: 500,
-        headers: { 'content-type': 'application/json' },
-      });
-    }
-  } catch (e) {
-    return new Response(JSON.stringify({ error: e.message }), {
-      status: 500,
-      headers: { 'content-type': 'application/json' },
+    let projFolder = "";
+    try {
+      if (projectId) {
+        const proj = await prisma.project.findUnique({ where: { id: Number(projectId) } });
+        if (proj) projFolder = `${proj.id}-${slugify(proj.name || `project-${proj.id}`)}`;
+      }
+    } catch {}
+
+    const destName = `${Date.now()}_${filename}`;
+    const destinationPath = `${clientFolder}/${projFolder}/${destName}`.replace(/\/+/g, "/");
+
+    const storage = getGCSStorage();
+    const file = storage.bucket(GCS_BUCKET).file(destinationPath);
+
+    const [uploadUrl] = await file.getSignedUrl({
+      version: "v4",
+      action: "write",
+      expires: Date.now() + 10 * 60 * 1000, // 10 min
+      contentType,                            // MUST match the header used in PUT
     });
-  }
-}
 
-export async function OPTIONS() {
-  const response = new Response(null, {
-    status: 204,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
-    },
-  });
-  return response;
+    return NextResponse.json({ uploadUrl, destinationPath });
+  } catch (e) {
+    console.error("upload-url error:", e);
+    return NextResponse.json({ error: e.message || "failed to sign url" }, { status: 500 });
+  }
 }

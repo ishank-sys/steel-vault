@@ -1,17 +1,8 @@
 [
   {
-    "origin": ["*"],
-    "method": ["GET", "HEAD", "OPTIONS"],
-    "responseHeader": [
-      "Content-Type",
-      "Content-Disposition",
-      "Content-Length",
-      "ETag",
-      "x-goog-generation",
-      "x-goog-metageneration",
-      "x-goog-storage-class",
-      "x-goog-hash"
-    ],
+    "origin": ["http://localhost:3000", "https://steel-vault.vercel.app"],
+    "method": ["PUT","GET","HEAD"],
+    "responseHeader": ["Content-Type","Content-Length","Content-Disposition","x-goog-meta-*"],
     "maxAgeSeconds": 3600
   }
 ]

@@ -1,18 +1,11 @@
-// app/api/upload/route.js
 import { NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
+import { getGCSStorage } from "@/lib/gcs";
 import { Readable } from "stream";
 import { pipeline } from "stream/promises";
 
-// Force Node runtime (Edge breaks @google-cloud/storage & Node streams)
-export const runtime = "nodejs";
-
-import { getGCSStorage } from "@/lib/gcs";
-
 const prisma = new PrismaClient();
-const GCS_BUCKET = process.env.GCS_BUCKET;
 
-// utils
 const toIntOrNull = (v) => {
   const n = typeof v === "string" ? parseInt(v, 10) : Number(v);
   return Number.isFinite(n) ? n : null;
@@ -24,10 +17,50 @@ const slugify = (s) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 80);
-
+// Ensure this is defined before any usage. If you change .env, restart your server!
+const GCS_BUCKET = process.env.GCS_BUCKET;
+// --- LOGGING ENDPOINT FOR DIRECT GCS UPLOADS AND MULTIPART HANDLER ---
 export async function POST(req) {
   try {
     const contentType = req.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      // Direct log request (from client after GCS PUT)
+      try {
+        const body = await req.json();
+        const { clientId, projectId, originalName, storagePath, size, logType } = body;
+        let record = null;
+        try {
+          await prisma.documentLog.create({
+            data: {
+              fileName: originalName,
+              clientId: clientId ?? null,
+              projectId: projectId ?? null,
+              storagePath,
+              size,
+              logType: logType || "EMPLOYEE_UPLOAD",
+            },
+          });
+          record = await prisma.documentLog.findFirst({ where: { storagePath } });
+        } catch (e) {
+          console.error("Failed to log upload:", e && e.message ? e.message : e);
+        }
+        try {
+          await prisma.upload.create({
+            data: {
+              clientId: clientId ?? null,
+              filename: originalName,
+              storagePath,
+              size,
+            },
+          });
+        } catch (e) {
+          console.warn("Could not persist upload metadata:", e && e.message ? e.message : e);
+        }
+        return NextResponse.json({ message: "Logged", record });
+      } catch (err) {
+        return NextResponse.json({ error: err && err.message ? err.message : String(err) }, { status: 500 });
+      }
+    }
 
     // ---- multipart upload path ----
     if (contentType.includes("multipart/form-data")) {
