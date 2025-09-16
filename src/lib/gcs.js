@@ -41,6 +41,15 @@ export function getGCSStorage() {
     };
   }
 
+  // Validate credentials: require private_key, client_email, project_id
+  const missing = [];
+  if (!credentials.private_key) missing.push('private_key');
+  if (!credentials.client_email) missing.push('client_email');
+  if (!credentials.project_id) missing.push('project_id');
+  if (missing.length) {
+    throw new Error(`GCS credentials incomplete, missing: ${missing.join(', ')}. Provide full JSON in GOOGLE_APPLICATION_CREDENTIALS_JSON or set GCS_PRIVATE_KEY, GCS_CLIENT_EMAIL and GCS_PROJECT_ID.`);
+  }
+
   storage = new Storage({
     projectId: credentials.project_id || process.env.GCS_PROJECT_ID,
     credentials: credentials

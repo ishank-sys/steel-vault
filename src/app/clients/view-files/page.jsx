@@ -104,23 +104,33 @@ const ViewFiles = () => {
             <table className="table-auto w-full border-collapse border border-gray-300">
               <thead>
                 <tr className="bg-gray-100">
-                  <th className="border border-gray-300 px-4 py-2 text-left">File Name</th>
-                  <th className="border border-gray-300 px-4 py-2 text-left">Uploaded At</th>
-                  <th className="border border-gray-300 px-4 py-2 text-left">Download</th>
+                  <th className="border border-gray-300 px-4 py-2 text-left">
+                    File Name
+                  </th>
+                  <th className="border border-gray-300 px-4 py-2 text-left">
+                    Uploaded At
+                  </th>
+                  <th className="border border-gray-300 px-4 py-2 text-left">
+                    Download
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {files.map((file) => (
                   <tr key={file.id} className="hover:bg-gray-50">
-                    <td className="border border-gray-300 px-4 py-2">{file.fileName}</td>
-                    <td className="border border-gray-300 px-4 py-2">{new Date(file.uploadedAt || file.createdAt).toLocaleString()}</td>
+                    <td className="border border-gray-300 px-4 py-2">
+                      {file.fileName}
+                    </td>
+                    <td className="border border-gray-300 px-4 py-2">
+                      {new Date(file.uploadedAt || file.createdAt).toLocaleString()}
+                    </td>
                     <td className="border border-gray-300 px-4 py-2">
                       <button
                         className="text-blue-500 hover:underline"
                         onClick={async () => {
                           try {
+                            // If storagePath is an object path (no scheme), call signed-url endpoint
                             const isObjectPath = !file.storagePath.startsWith("http");
-                            let url = null;
                             if (isObjectPath) {
                               const res = await fetch(`/api/files/${file.id}/url`);
                               if (!res.ok) {
@@ -128,19 +138,14 @@ const ViewFiles = () => {
                                 alert(`Could not get download URL: ${err.error || res.statusText}`);
                                 return;
                               }
-                              const body = await res.json();
-                              url = body.url;
-                            } else {
-                              url = file.storagePath.replace('https://storage.cloud.google.com/', 'https://storage.googleapis.com/');
-                            }
-
-                            if (!url) {
-                              alert('No download URL available');
+                              const { url } = await res.json();
+                              window.location.href = url;
                               return;
                             }
 
-                            // Navigate to the signed URL (CORS-safe)
-                            window.location.href = url;
+                            // Fallback: transform cloud.google.com to storage.googleapis.com for public links
+                            const publicUrl = file.storagePath.replace('https://storage.cloud.google.com/', 'https://storage.googleapis.com/');
+                            window.location.href = publicUrl;
                           } catch (err) {
                             console.error('Download error', err);
                             alert('Failed to start download');
@@ -157,7 +162,9 @@ const ViewFiles = () => {
           )}
 
           {!loading && files.length === 0 && selectedClientId && (
-            <p className="text-gray-500">No files found for the selected client.</p>
+            <p className="text-gray-500">
+              No files found for the selected client.
+            </p>
           )}
         </div>
       </div>

@@ -1,5 +1,5 @@
 'use client';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useSession } from 'next-auth/react';
 
 export default function FileTransferPanel() {
@@ -9,55 +9,78 @@ export default function FileTransferPanel() {
   const [projects, setProjects] = useState([]);
   const [selectedFile, setSelectedFile] = useState(null);
   const [selectedClientId, setSelectedClientId] = useState('');
-  const [selectedUserId, setSelectedUserId] = useState('');
   const [selectedProjectId, setSelectedProjectId] = useState('');
   const [loading, setLoading] = useState(false);
   const [resultMsg, setResultMsg] = useState('');
   const [lastUploaded, setLastUploaded] = useState(null);
 
   useEffect(() => {
-    // Fetch all clients from the client table
     fetch('/api/clients')
-      .then((res) => {
-        if (!res.ok) {
-          throw new Error('Failed to fetch clients');
-        }
-        return res.json();
-      })
+      .then((res) => (res.ok ? res.json() : []))
       .then((data) => setClients(Array.isArray(data) ? data : []))
-      .catch((err) => {
-        console.error('Error fetching clients:', err);
-        setClients([]); // Ensure clients state is reset on error
-      });
+      .catch(() => setClients([]));
   }, []);
 
   useEffect(() => {
-    if (selectedClientId) {
-      // Fetch users for the selected client
-      fetch(`/api/users?clientId=${selectedClientId}`)
-        .then((res) => res.json())
-        .then((data) => setUsers(Array.isArray(data) ? data : []))
-        .catch((err) => console.error('Failed to load users', err));
+    if (!selectedClientId) return;
+    fetch(`/api/users?clientId=${selectedClientId}`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => setUsers(Array.isArray(data) ? data : []))
+      .catch(() => setUsers([]));
 
-      // Fetch projects for the selected client
-      fetch(`/api/projects?clientId=${selectedClientId}`)
-        .then((res) => res.json())
-        .then((data) => setProjects(Array.isArray(data) ? data : []))
-        .catch((err) => console.error('Failed to load projects', err));
-    }
+    fetch(`/api/projects?clientId=${selectedClientId}`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => setProjects(Array.isArray(data) ? data : []))
+      .catch(() => setProjects([]));
   }, [selectedClientId]);
 
-  // derive current user's display name from fetched users (fallback to session email)
-  const currentUserName = React.useMemo(() => {
-    if (status === 'loading') return 'Loading...';
-    if (!session?.user?.email) return '';
-    return session.user.email;
+  const currentUserEmail = useMemo(() => {
+    if (status === 'loading') return '';
+    return (session && session.user && session.user.email) || '';
   }, [session, status]);
+
+  async function handleUpload() {
+    if (!selectedFile) return setResultMsg('Select a file.');
+    if (!selectedClientId) return setResultMsg('Select a client.');
+    if (!selectedProjectId) return setResultMsg('Select a project.');
+
+    setLoading(true);
+    setResultMsg('');
+    setLastUploaded(null);
+
+    try {
+      const form = new FormData();
+      form.append('file', selectedFile);
+      form.append('clientId', selectedClientId);
+      form.append('projectId', selectedProjectId);
+
+      const headers = {};
+      if (currentUserEmail) headers['x-user-email'] = currentUserEmail;
+
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        headers, // do NOT set Content-Type when sending FormData
+        body: form,
+      });
+
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setResultMsg(`Upload failed: ${json.error || res.statusText}`);
+        return;
+      }
+      setResultMsg(json.message || 'Uploaded');
+      if (json.record) setLastUploaded(json.record);
+    } catch (e) {
+      setResultMsg(e && e.message ? e.message : 'Unexpected error');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <div className="border p-4 w-full max-w-full overflow-x-auto">
       <div className="flex flex-wrap justify-between gap-6">
-        {/* Client Selection */}
+        {/* Client */}
         <div className="flex flex-col gap-2">
           <label className="font-bold text-black">Client:</label>
           <select
@@ -74,27 +97,17 @@ export default function FileTransferPanel() {
           </select>
         </div>
 
-        {/* User Selection */}
+        {/* (Optional) Users list, read-only */}
         <div className="flex flex-col gap-2">
-          <label className="font-bold text-black">User:</label>
-          <select
-            className="ml-0 border border-gray-400 rounded px-2 py-1"
-            value={selectedUserId}
-            onChange={(e) => setSelectedUserId(e.target.value)}
-            disabled={!selectedClientId}
-          >
-            <option value="">Select User</option>
-            {users
-              .filter((u) => (u.userType || '').toString().toLowerCase() === 'client')
-              .map((user) => (
-                <option key={user.id} value={user.id}>
-                  {user.name}
-                </option>
-              ))}
+          <label className="font-bold text-black">Users:</label>
+          <select className="ml-0 border border-gray-400 rounded px-2 py-1" disabled>
+            <option value="">
+              {users.length ? `${users.length} user(s)` : 'No users'}
+            </option>
           </select>
         </div>
 
-        {/* Project Selection */}
+        {/* Project */}
         <div className="flex flex-col gap-2">
           <label className="font-bold text-black">Project:</label>
           <select
@@ -112,54 +125,18 @@ export default function FileTransferPanel() {
           </select>
         </div>
 
-        {/* File Upload */}
+        {/* File & Upload */}
         <div className="flex flex-col gap-2">
           <label className="font-bold text-black">File:</label>
           <input
             type="file"
-            onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+            onChange={(e) => setSelectedFile(e.target.files && e.target.files[0] ? e.target.files[0] : null)}
             className="border border-gray-400 px-2 py-1 text-red-600"
           />
 
           <button
-            disabled={!selectedFile || !selectedClientId || !selectedUserId || !selectedProjectId || loading}
-            onClick={async () => {
-              if (!selectedFile || !selectedClientId || !selectedUserId || !selectedProjectId) return;
-              setLoading(true);
-              setResultMsg('');
-              try {
-                // Use signed URL flow: request upload url, PUT file, then log
-                try {
-                  const r = await fetch('/api/upload-url', {
-                    method: 'POST',
-                    headers: { 'content-type': 'application/json' },
-                    body: JSON.stringify({ filename: selectedFile.name, contentType: selectedFile.type, clientId: selectedClientId, projectId: selectedProjectId }),
-                  });
-                  if (!r.ok) throw new Error('Failed to get upload URL');
-                  const { uploadUrl, destinationPath } = await r.json();
-
-                  const put = await fetch(uploadUrl, { method: 'PUT', headers: { 'content-type': selectedFile.type || 'application/octet-stream' }, body: selectedFile });
-                  if (!put.ok) throw new Error(`Upload failed: ${put.status}`);
-
-                  const logRes = await fetch('/api/upload-log', {
-                    method: 'POST',
-                    headers: { 'content-type': 'application/json' },
-                    body: JSON.stringify({ clientId: selectedClientId, projectId: selectedProjectId, originalName: selectedFile.name, storagePath: `gs://${process.env.NEXT_PUBLIC_GCS_BUCKET || ''}/${destinationPath}`, size: selectedFile.size }),
-                  });
-                  const logJson = await logRes.json().catch(() => ({}));
-                  setResultMsg(`Uploaded: ${destinationPath}`);
-                  if (logJson?.record) setLastUploaded(logJson.record);
-                } catch (err) {
-                  console.error('Upload error', err);
-                  setResultMsg(err.message || String(err));
-                }
-               } catch (err) {
-                 console.error('Upload error', err);
-                 setResultMsg(err.message || String(err));
-               } finally {
-                 setLoading(false);
-               }
-            }}
+            disabled={!selectedFile || !selectedClientId || !selectedProjectId || loading}
+            onClick={handleUpload}
             className="bg-teal-800 hover:bg-teal-700 text-white font-semibold py-1 px-4 rounded mt-1 disabled:opacity-50"
           >
             {loading ? 'Uploading...' : 'Send Files'}
@@ -167,27 +144,8 @@ export default function FileTransferPanel() {
 
           {resultMsg && <div className="text-sm mt-2">{resultMsg}</div>}
           {lastUploaded && (
-            <div className="mt-2">
-              <button
-                className="text-blue-600 underline"
-                onClick={async () => {
-                  try {
-                    const res = await fetch(`/api/files/${lastUploaded.id}/url`);
-                    if (!res.ok) {
-                      const err = await res.json().catch(() => ({}));
-                      alert(`Could not get download URL: ${err.error || res.statusText}`);
-                      return;
-                    }
-                    const { url } = await res.json();
-                    window.location.href = url;
-                  } catch (e) {
-                    console.error(e);
-                    alert('Failed to fetch signed url');
-                  }
-                }}
-              >
-                Download uploaded file
-              </button>
+            <div className="mt-2 text-xs text-gray-700">
+              Saved at: {lastUploaded.storagePath || lastUploaded.path || '—'}
             </div>
           )}
         </div>

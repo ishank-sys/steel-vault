@@ -28,8 +28,7 @@ const ViewProjectFiles = () => {
       const res = await fetch(`/api/gcs-signed-url?path=${encodeURIComponent(row.storagePath)}`);
       const data = await res.json();
       if (data.url) {
-        // Navigate to the signed URL (CORS-safe)
-        window.location.href = data.url;
+        window.open(data.url, '_blank');
       } else {
         alert('Failed to get download link');
       }
