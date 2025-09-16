@@ -24,6 +24,7 @@ const TransmittalForm = () => {
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishResult, setPublishResult] = useState(null);
   const [showPublishModal, setShowPublishModal] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   // Date logic from HybridPublishDrawings
   const today = new Date().toISOString().slice(0, 10);
@@ -496,6 +497,7 @@ const handlePublish = async () => {
   const zipName = zipNameRef.current?.value || '';
 
   try {
+    setUploadProgress(0);
     // Recreate the PDF and Excel and zip exactly like handleDownload
     const doc = new jsPDF('p', 'pt', 'a4');
     let y = 40;
@@ -650,39 +652,59 @@ const handlePublish = async () => {
       console.debug('Publishing transmittal with', { projectNo, projectIdToSend, clientId });
     } catch (e) {}
 
+
     // Upload ZIP via signed URL (avoid streaming on the server)
     // 🚫 No signed URL, no CORS. Send to our server; server streams to GCS.
-const zipFile = new File([content], `${zipName || 'Transmittal'}.zip`, { type: 'application/zip' });
+    const zipFile = new File([content], `${zipName || 'Transmittal'}.zip`, { type: 'application/zip' });
 
-// Build form data for /api/upload (our Node runtime route.js)
-const form = new FormData();
-form.append('file', zipFile);
-if (clientId != null) form.append('clientId', String(clientId));
-if (projectIdToSend != null) form.append('projectId', String(projectIdToSend));
+    // Build form data for /api/upload (our Node runtime route.js)
+    const form = new FormData();
+    form.append('file', zipFile);
+    if (clientId != null) form.append('clientId', String(clientId));
+    if (projectIdToSend != null) form.append('projectId', String(projectIdToSend));
 
-const headers = {};
-// If you want Code 1-style inference, pass the user’s email so the route can resolve client
-try {
-  const meRes = await fetch('/api/users/me');
-  if (meRes.ok) {
-    const me = await meRes.json();
-    if (me?.email) headers['x-user-email'] = me.email;
-  }
-} catch {}
+    const headers = {};
+    // If you want Code 1-style inference, pass the user’s email so the route can resolve client
+    try {
+      const meRes = await fetch('/api/users/me');
+      if (meRes.ok) {
+        const me = await meRes.json();
+        if (me?.email) headers['x-user-email'] = me.email;
+      }
+    } catch {}
 
-const upRes = await fetch('/api/upload', {
-  method: 'POST',
-  headers,           // DO NOT set Content-Type when sending FormData
-  body: form,
-});
+    setIsPublishing(true);
 
-const upJson = await upRes.json().catch(() => ({}));
-if (!upRes.ok) {
-  setPublishResult({ success: false, error: upJson.error || upRes.statusText });
-} else {
-  setPublishResult({ success: true, data: upJson });
-}
-setShowPublishModal(true);
+    // Use XMLHttpRequest for upload progress
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/upload', true);
+    Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        setUploadProgress(Math.round((event.loaded / event.total) * 100));
+      }
+    };
+
+    xhr.onload = () => {
+      setIsPublishing(false);
+      let json = {};
+      try { json = JSON.parse(xhr.responseText); } catch {}
+      if (xhr.status >= 200 && xhr.status < 300) {
+        setPublishResult({ success: true, data: json });
+      } else {
+        setPublishResult({ success: false, error: json.error || xhr.statusText });
+      }
+      setShowPublishModal(true);
+    };
+
+    xhr.onerror = () => {
+      setIsPublishing(false);
+      setPublishResult({ success: false, error: 'Unexpected error' });
+      setShowPublishModal(true);
+    };
+
+    xhr.send(form);
 
   } catch (e) {
     console.error('Publish failed', e);
@@ -851,6 +873,19 @@ setShowPublishModal(true);
         <button className="bg-teal-800 text-white px-4 py-2 rounded text-sm hover:bg-teal-900" onClick={handleDownload}>Download</button>
         <button className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700" onClick={() => router.push("/dashboard/project/project/publish_drawings/hybrid_publish_drawings")}>Back For Correction</button>
       </div>
+
+      {/* Upload Progress Bar for Publish */}
+      {isPublishing && (
+        <div className="w-full bg-gray-200 rounded h-3 mt-2">
+          <div
+            className="bg-blue-600 h-3 rounded"
+            style={{ width: `${uploadProgress}%`, transition: 'width 0.2s' }}
+          ></div>
+        </div>
+      )}
+      {isPublishing && (
+        <div className="text-xs text-gray-700 mt-1">{uploadProgress}%</div>
+      )}
 
       {/* Publish confirmation modal (printable) */}
       {showPublishModal && (

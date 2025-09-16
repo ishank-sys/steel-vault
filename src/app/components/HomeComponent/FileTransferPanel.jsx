@@ -13,6 +13,7 @@ export default function FileTransferPanel() {
   const [loading, setLoading] = useState(false);
   const [resultMsg, setResultMsg] = useState('');
   const [lastUploaded, setLastUploaded] = useState(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   useEffect(() => {
     fetch('/api/clients')
@@ -47,6 +48,7 @@ export default function FileTransferPanel() {
     setLoading(true);
     setResultMsg('');
     setLastUploaded(null);
+    setUploadProgress(0);
 
     try {
       const form = new FormData();
@@ -57,23 +59,40 @@ export default function FileTransferPanel() {
       const headers = {};
       if (currentUserEmail) headers['x-user-email'] = currentUserEmail;
 
-      const res = await fetch('/api/upload', {
-        method: 'POST',
-        headers, // do NOT set Content-Type when sending FormData
-        body: form,
-      });
+      // Use XMLHttpRequest for upload progress
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/upload', true);
+      Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
 
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setResultMsg(`Upload failed: ${json.error || res.statusText}`);
-        return;
-      }
-      setResultMsg(json.message || 'Uploaded');
-      if (json.record) setLastUploaded(json.record);
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          setUploadProgress(Math.round((event.loaded / event.total) * 100));
+        }
+      };
+
+      xhr.onload = () => {
+        setLoading(false);
+        if (xhr.status >= 200 && xhr.status < 300) {
+          let json = {};
+          try { json = JSON.parse(xhr.responseText); } catch {}
+          setResultMsg(json.message || 'Uploaded');
+          if (json.record) setLastUploaded(json.record);
+        } else {
+          let json = {};
+          try { json = JSON.parse(xhr.responseText); } catch {}
+          setResultMsg(`Upload failed: ${json.error || xhr.statusText}`);
+        }
+      };
+
+      xhr.onerror = () => {
+        setLoading(false);
+        setResultMsg('Unexpected error');
+      };
+
+      xhr.send(form);
     } catch (e) {
-      setResultMsg(e && e.message ? e.message : 'Unexpected error');
-    } finally {
       setLoading(false);
+      setResultMsg(e && e.message ? e.message : 'Unexpected error');
     }
   }
 
@@ -141,6 +160,19 @@ export default function FileTransferPanel() {
           >
             {loading ? 'Uploading...' : 'Send Files'}
           </button>
+
+          {/* Upload Progress Bar */}
+          {loading && (
+            <div className="w-full bg-gray-200 rounded h-3 mt-2">
+              <div
+                className="bg-blue-600 h-3 rounded"
+                style={{ width: `${uploadProgress}%`, transition: 'width 0.2s' }}
+              ></div>
+            </div>
+          )}
+          {loading && (
+            <div className="text-xs text-gray-700 mt-1">{uploadProgress}%</div>
+          )}
 
           {resultMsg && <div className="text-sm mt-2">{resultMsg}</div>}
           {lastUploaded && (
