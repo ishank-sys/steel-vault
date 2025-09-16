@@ -74,7 +74,8 @@ export default function Sidebar() {
     // admin sees everything
     if (t.includes('admin')) return true;
     if (t.includes('client')) {
-      return ['Clients', 'Project'].includes(section);
+      // Clients can only see Clients section (not Project)
+      return section === 'Clients';
     }
     if (t.includes('employee')) {
       return ['Employee', 'Project'].includes(section);
