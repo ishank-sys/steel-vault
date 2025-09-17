@@ -28,10 +28,12 @@ const formatRegexMap = {
   "Project-Drg-Revision": /^[\w\d]+-[\w\d]+-[\w\d]+\.pdf$/i,
   "Drg-Revision": /^[\w\d]+-[\w\d]+\.pdf$/i,
   "Drg": /^[\w\d]+\.pdf$/i,
-  "Project-Drg(Revision)": /^[\w\d]+-[\w\d]+KATEX_INLINE_OPEN[\w\d]+KATEX_INLINE_CLOSE\.pdf$/i,
+  // e.g., ABC-123(REV1).pdf
+  "Project-Drg(Revision)": /^[\w\d]+-[\w\d]+\([\w\d]+\)\.pdf$/i,
   "Project_Drg_Revision": /^[\w\d]+_[\w\d]+_[\w\d]+\.pdf$/i,
   "Drg_Revision": /^[\w\d]+_[\w\d]+\.pdf$/i,
-  "Project_Drg(Revision)": /^[\w\d]+_[\w\d]+KATEX_INLINE_OPEN[\w\d]+KATEX_INLINE_CLOSE\.pdf$/i,
+  // e.g., ABC_123(REV1).pdf
+  "Project_Drg(Revision)": /^[\w\d]+_[\w\d]+\([\w\d]+\)\.pdf$/i,
   "%Drg%#Revision#": /^.+#.+#\.pdf$/i,
 };
 
@@ -143,22 +145,34 @@ const PublishDrawing = () => {
 
   const handleFileChange = useCallback((e, type) => {
     if (!useDrawingStore.getState().projectNo) return alert("Please select a Project No. first.");
-    const files = Array.from(e.target.files);
-    const newFiles = files.map((file) => ({
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    const newItems = files.map((file) => ({
       id: crypto.randomUUID(),
       name: file.name,
       file,
     }));
-
     if (type === "Extras") {
-      setExtras([...extras, ...newFiles]);
+      setExtras((prev) => {
+        const merged = [...prev, ...newItems];
+        return merged.map((item, i) => ({ ...item, slno: i + 1 }));
+      });
+      setSelectedExtrasRows(new Set());
     } else if (type === "3D Model") {
-      setModels([...models, ...newFiles]);
+      setModels((prev) => {
+        const merged = [...prev, ...newItems];
+        return merged.map((item, i) => ({ ...item, slno: i + 1 }));
+      });
+      setSelectedModelRows(new Set());
     }
-  }, [extras, models, setExtras, setModels]);
+    // reset input
+    if (e && e.target) e.target.value = null;
+  }, [setExtras, setModels, setSelectedExtrasRows, setSelectedModelRows]);
 
   const handleDeleteExtras = useCallback(() => {
-    const updated = extras.filter(item => !selectedExtrasRows.has(item.id));
+    const updated = extras
+      .filter(item => !selectedExtrasRows.has(item.id))
+      .map((item, i) => ({ ...item, slno: i + 1 }));
     setExtras(updated);
     setSelectedExtrasRows(new Set());
   }, [extras, selectedExtrasRows, setExtras]);
@@ -325,12 +339,18 @@ const PublishDrawing = () => {
 
   // Re-filter projects when selectedClientId changes
   React.useEffect(() => {
-    if (!selectedClientId) {
+    if (selectedClientId == null) {
       // restore full list
       setProjects(allProjects || []);
       return;
     }
-    const filtered = (allProjects || []).filter(p => p.clientId === selectedClientId || (p.client && p.client.id === selectedClientId) || p.ownerId === selectedClientId);
+    const cid = Number(selectedClientId);
+    const filtered = (allProjects || []).filter(p => {
+      const pid = Number(p.clientId);
+      const pcid = Number(p?.client?.id);
+      const owner = Number(p?.ownerId);
+      return pid === cid || pcid === cid || owner === cid;
+    });
     setProjects(filtered);
   }, [selectedClientId, allProjects]);
   
@@ -408,8 +428,10 @@ const PublishDrawing = () => {
     addToZipByExtension(extras);
     addToZipByExtension(models);
 
-    if (uploadedExcelFile) {
-      zip.file(uploadedExcelFile.name, uploadedExcelFile);
+    if (uploadedExcelFile && uploadedExcelFile.length) {
+      uploadedExcelFile.forEach((f) => {
+        if (f && f.name) zip.file(f.name, f);
+      });
     }
 
     const content = await zip.generateAsync({ type: "blob" });

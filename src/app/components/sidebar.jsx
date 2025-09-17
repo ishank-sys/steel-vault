@@ -191,7 +191,7 @@ export default function Sidebar({ initialUserType = null }) {
             <SidebarItem
               label="View Drawing Details"
               href="/dashboard/project/project/view_drawing_details"
-            />
+            /> 
             <SidebarItem
               label="View Published Drawings"
               href="/dashboard/project/project/view_published_drawings"

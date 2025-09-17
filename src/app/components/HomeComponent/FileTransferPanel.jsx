@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { uploadToGCSDirect } from '@/lib/uploadToGCS';
 import { useSession } from 'next-auth/react';
+import useSWR from 'swr';
 
 export default function FileTransferPanel() {
   const { data: session, status } = useSession();
@@ -16,25 +17,21 @@ export default function FileTransferPanel() {
   const [lastUploaded, setLastUploaded] = useState(null);
   const [uploadProgress, setUploadProgress] = useState(0);
 
+  const { data: swrClients } = useSWR('/api/clients');
   useEffect(() => {
-    fetch('/api/clients')
-      .then((res) => (res.ok ? res.json() : []))
-      .then((data) => setClients(Array.isArray(data) ? data : []))
-      .catch(() => setClients([]));
-  }, []);
+    setClients(Array.isArray(swrClients) ? swrClients : []);
+  }, [swrClients]);
 
+  const { data: swrUsers } = useSWR(() => selectedClientId ? `/api/users?clientId=${selectedClientId}` : null);
+  const { data: swrProjects } = useSWR(() => selectedClientId ? `/api/projects?clientId=${selectedClientId}` : null);
   useEffect(() => {
-    if (!selectedClientId) return;
-    fetch(`/api/users?clientId=${selectedClientId}`)
-      .then((res) => (res.ok ? res.json() : []))
-      .then((data) => setUsers(Array.isArray(data) ? data : []))
-      .catch(() => setUsers([]));
-
-    fetch(`/api/projects?clientId=${selectedClientId}`)
-      .then((res) => (res.ok ? res.json() : []))
-      .then((data) => setProjects(Array.isArray(data) ? data : []))
-      .catch(() => setProjects([]));
-  }, [selectedClientId]);
+    if (!selectedClientId) { setUsers([]); return; }
+    setUsers(Array.isArray(swrUsers) ? swrUsers : []);
+  }, [swrUsers, selectedClientId]);
+  useEffect(() => {
+    if (!selectedClientId) { setProjects([]); return; }
+    setProjects(Array.isArray(swrProjects) ? swrProjects : []);
+  }, [swrProjects, selectedClientId]);
 
   const currentUserEmail = useMemo(() => {
     if (status === 'loading') return '';
