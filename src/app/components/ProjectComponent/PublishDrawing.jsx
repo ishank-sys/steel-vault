@@ -690,58 +690,76 @@ const PublishDrawing = () => {
       <div className="bg-white p-4 border">
         {activeTab === "Drawings" && (
           <>
-            <div className="space-y-2">
-              <div className="flex gap-2">
-                <input type="file" multiple accept=".xls,.xlsx" onChange={handleExcelUpload} ref={excelInputRef} />
-                <button onClick={attachExcelToTable} className="bg-teal-800 text-white px-4 py-1 text-sm rounded">
-                  Attach .xls File
-                </button>
+            <div className="space-y-4">
+              {/* Excel Upload Box */}
+              <div className="rounded-lg border border-gray-300 bg-gray-50 p-4 shadow-sm">
+                <div className="text-sm font-semibold text-gray-700 mb-2">Upload Excel (.xls, .xlsx)</div>
+                <div className="flex gap-2 items-center flex-wrap">
+                  <input
+                    type="file"
+                    multiple
+                    accept=".xls,.xlsx"
+                    onChange={handleExcelUpload}
+                    ref={excelInputRef}
+                    className="file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-teal-700 file:text-white hover:file:bg-teal-800"
+                  />
+                  <button onClick={attachExcelToTable} className="bg-teal-800 text-white px-4 py-1.5 text-sm rounded">
+                    Attach .xls File
+                  </button>
+                </div>
               </div>
-              <div className="flex gap-2 items-center">
-                <input
-                  type="file"
-                  multiple
-                  accept=".pdf"
-                  ref={extrasInputRef}
-                  onChange={(e) => {
-                    if (!useDrawingStore.getState().projectNo) {
-                      alert("Please select a Project No. first.");
-                      return;
-                    }
-                    const files = Array.from(e.target.files);
-                    setPendingExtraFiles(files);
-                  }}
-                />
-                <button
-                  className="bg-teal-800 text-white px-4 py-1 text-sm rounded"
-                  onClick={handleAttachFiles}
-                >
-                  Attach Files
-                </button>
-                <select
-                  value={selectedFormat}
-                  onChange={(e) => {
-                    const format = e.target.value;
-                    setSelectedFormat(format);
-                    if (!pendingExtraFiles.length) return;
-                    const regex = formatRegexMap[format];
-                    const invalidFiles = pendingExtraFiles.filter((file) => !regex.test(file.name));
-                    if (invalidFiles.length > 0) {
-                      alert(
-                        `The following files do not match the selected format (${format}):\n` +
-                        invalidFiles.map((f) => `- ${f.name}`).join("\n")
-                      );
-                    }
-                  }}
-                  className="border px-2 py-1 text-sm rounded"
-                >
-                  <option value="">Select Format</option>
-                  {formatOptions.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                </select>
+
+              {/* PDF Upload Box */}
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 shadow-sm">
+                <div className="text-sm font-semibold text-blue-900 mb-2">Attach PDF Drawings</div>
+                <div className="flex gap-2 items-center flex-wrap">
+                  <input
+                    type="file"
+                    multiple
+                    accept=".pdf"
+                    ref={extrasInputRef}
+                    onChange={(e) => {
+                      if (!useDrawingStore.getState().projectNo) {
+                        alert("Please select a Project No. first.");
+                        return;
+                      }
+                      const files = Array.from(e.target.files);
+                      setPendingExtraFiles(files);
+                    }}
+                    className="file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-700 file:text-white hover:file:bg-blue-800"
+                  />
+                  <button
+                    className="bg-teal-800 text-white px-4 py-1.5 text-sm rounded"
+                    onClick={handleAttachFiles}
+                  >
+                    Attach Files
+                  </button>
+                  <select
+                    value={selectedFormat}
+                    onChange={(e) => {
+                      const format = e.target.value;
+                      setSelectedFormat(format);
+                      if (!pendingExtraFiles.length) return;
+                      const regex = formatRegexMap[format];
+                      const invalidFiles = pendingExtraFiles.filter((file) => !regex.test(file.name));
+                      if (invalidFiles.length > 0) {
+                        alert(
+                          `The following files do not match the selected format (${format}):\n` +
+                          invalidFiles.map((f) => `- ${f.name}`).join("\n")
+                        );
+                      }
+                    }}
+                    className="border px-2 py-1.5 text-sm rounded"
+                  >
+                    <option value="">Select Format</option>
+                    {formatOptions.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <p className="text-xs text-blue-900/70 mt-2">Select the format that matches your file naming.</p>
               </div>
             </div>
             {renderTable(drawings, true, selectedRows, setSelectedRows)}
@@ -757,8 +775,17 @@ const PublishDrawing = () => {
 
         {activeTab === "Extras" && (
           <>
-            <div className="flex gap-2 mb-2">
-              <input type="file" multiple onChange={(e) => handleFileChange(e, "Extras")} ref={extrasInputRef} />
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 shadow-sm mb-2">
+              <div className="text-sm font-semibold text-amber-900 mb-2">Attach Extra Files</div>
+              <div className="flex gap-2 items-center flex-wrap">
+                <input
+                  type="file"
+                  multiple
+                  onChange={(e) => handleFileChange(e, "Extras")}
+                  ref={extrasInputRef}
+                  className="file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-amber-700 file:text-white hover:file:bg-amber-800"
+                />
+              </div>
             </div>
             {renderTable(extras, false, selectedExtrasRows, setSelectedExtrasRows)}
             {selectedExtrasRows.size > 0 && (
@@ -772,8 +799,17 @@ const PublishDrawing = () => {
         )}
         {activeTab === "3D Model" && (
           <>
-            <div className="flex gap-2 mb-2">
-              <input type="file" multiple onChange={(e) => handleFileChange(e, "3D Model")} ref={modelInputRef} />
+            <div className="rounded-lg border border-fuchsia-200 bg-fuchsia-50 p-4 shadow-sm mb-2">
+              <div className="text-sm font-semibold text-fuchsia-900 mb-2">Attach 3D Model Files</div>
+              <div className="flex gap-2 items-center flex-wrap">
+                <input
+                  type="file"
+                  multiple
+                  onChange={(e) => handleFileChange(e, "3D Model")}
+                  ref={modelInputRef}
+                  className="file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-fuchsia-700 file:text-white hover:file:bg-fuchsia-800"
+                />
+              </div>
             </div>
             {renderTable(models, false, selectedModelRows, setSelectedModelRows)}
             {selectedModelRows.size > 0 && (

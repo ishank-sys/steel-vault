@@ -18,7 +18,7 @@ export default async function DashboardLayout({ children }) {
     <div className="flex flex-col h-screen w-full">
       <Navbar isLoggedIn={true} adminOnly={false} />
       <div className="flex flex-1 overflow-hidden">
-        <Sidebar />
+        <Sidebar initialUserType={session?.user?.userType || null} />
         <main className="flex-1 bg-white overflow-hidden">
           <div className="h-full w-full overflow-auto p-4">{children}</div>
         </main>

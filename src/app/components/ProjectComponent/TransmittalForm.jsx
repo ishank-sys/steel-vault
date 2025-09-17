@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useState, useCallback, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import JSZip from "jszip";
 import { saveAs } from 'file-saver';
@@ -28,6 +28,56 @@ const TransmittalForm = () => {
 
   // Date logic from HybridPublishDrawings
   const today = new Date().toISOString().slice(0, 10);
+
+  // --- Auto-fill Header Info from selected project ---
+  useEffect(() => {
+    let cancelled = false;
+
+    const setIfEmpty = (ref, val) => {
+      if (!ref?.current) return;
+      // don't override if user already typed
+      if (ref.current.value && String(ref.current.value).trim().length > 0) return;
+      if (val == null) return;
+      try { ref.current.value = String(val); } catch {}
+    };
+
+    const resolveAndFill = async () => {
+      try {
+        const res = await fetch('/api/projects', { cache: 'no-store' });
+        if (!res.ok) return;
+        const list = await res.json();
+        if (!Array.isArray(list)) return;
+
+        // Try to match by id, projectNo, name
+        const match = list.find(p => {
+          const idMatch = projectNo && !isNaN(Number(projectNo)) && Number(p.id) === Number(projectNo);
+          const noMatch = projectNo && (String(p.projectNo) === String(projectNo));
+          const nameMatch = projectName && (String(p.name) === String(projectName) || String(p.projectName) === String(projectName));
+          return idMatch || noMatch || nameMatch;
+        });
+        if (!match || cancelled) return;
+
+        // Map common fields safely. These keys are guessed based on typical schema and earlier API includes.
+        // 1) FABRICATOR JOB NO.
+        setIfEmpty(jobNoRef, match.fabricatorJobNo || match.jobNo || match.projectJobNo || '');
+        // 2) FABRICATOR CO-ORDINATOR
+        setIfEmpty(coordinatorRef, match.coordinator || match.fabricatorCoordinator || match.client?.coordinator || match.client?.contactPerson || '');
+        // 3) SOL JOB NO
+        setIfEmpty(solJobNoRef, match.solJobNo || match.solJob || match.projectNo || '');
+        // 4) FABRICATOR NAME
+        setIfEmpty(fabricatorNameRef, match.client?.name || match.fabricatorName || match.clientName || '');
+        // 5) SOL Team Leader
+        setIfEmpty(teamLeaderRef, match.solTL?.name || match.teamLeader || match.teamLead || '');
+        // Last 4 fields (Transmittal Name, Submittal Name, Zip Name, Complete Name) are intentionally left manual.
+      } catch (e) {
+        console.warn('Failed to prefill project header fields', e?.message || e);
+      }
+    };
+
+    resolveAndFill();
+
+    return () => { cancelled = true; };
+  }, [projectNo, projectName]);
 
   // Map approvedDrawings to the table format you need, with date logic
 const tableDrawings = selectedDrawings.map((d, i) => {

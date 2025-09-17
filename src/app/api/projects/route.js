@@ -1,7 +1,5 @@
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "@/lib/prisma.js";
 import { NextResponse } from "next/server";
-
-const prisma = new PrismaClient();
 
 function generateProjectNo() {
   const year = new Date().getFullYear();

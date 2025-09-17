@@ -19,8 +19,8 @@ export const metadata = {
 
 export default function LoginLayout({ children }) {
   return (
-    <html lang="en" className="h-full">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased  `}>
+    <html lang="en" className="h-full" suppressHydrationWarning>
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased  `} suppressHydrationWarning>
         <Providers>
           <div className="h-full">{children}</div>
         </Providers>

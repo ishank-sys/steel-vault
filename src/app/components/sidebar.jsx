@@ -14,8 +14,8 @@ const SidebarItem = ({ label, href }) => (
   </Link>
 );
 
-const CollapsibleGroup = ({ label, children }) => {
-  const [open, setOpen] = useState(false);
+const CollapsibleGroup = ({ label, children, defaultOpen = false }) => {
+  const [open, setOpen] = useState(defaultOpen);
 
   return (
     <div className="mb-2">
@@ -41,9 +41,9 @@ const CollapsibleGroup = ({ label, children }) => {
   );
 };
 
-export default function Sidebar() {
+export default function Sidebar({ initialUserType = null }) {
   const { data: session } = useSession();
-  const [userType, setUserType] = useState(null);
+  const [userType, setUserType] = useState(initialUserType ? String(initialUserType).toLowerCase().trim() : null);
 
   // If session has a userType, normalize and use it. React to session changes.
   useEffect(() => {
@@ -58,7 +58,7 @@ export default function Sidebar() {
     if (userType) return;
     const fetchMe = async () => {
       try {
-        const res = await fetch('/api/users/me');
+        const res = await fetch('/api/users/me', { headers: { 'cache-control': 'no-cache' } });
         if (!res.ok) return;
         const data = await res.json();
         if (data && data.userType) setUserType(String(data.userType).toLowerCase().trim());
@@ -84,11 +84,19 @@ export default function Sidebar() {
     return section === 'Employee';
   };
 
+  const defaultOpenFor = (section) => {
+    const t = (userType || '').toLowerCase();
+    if (t.includes('admin')) return section === 'Admin';
+    if (t.includes('client')) return section === 'Clients';
+    if (t.includes('employee')) return section === 'Employee';
+    return false;
+  };
+
   return (
     <aside className="w-64 h-full p-2 bg-white-200  shadow-blue-400/50 overflow-y-auto">
       {/* Employee Section (formerly Home) */}
       {canShow('Employee') && (
-        <CollapsibleGroup label="Employee">
+        <CollapsibleGroup label="Employee" defaultOpen={defaultOpenFor('Employee')}>
           <SidebarItem label="Dashboard" href="/dashboard/home/dashboard" />
           <SidebarItem
             label="Change Password"
@@ -107,7 +115,7 @@ export default function Sidebar() {
 
       {/* Admin Section */}
       {canShow('Admin') && (
-        <CollapsibleGroup label="Admin">
+        <CollapsibleGroup label="Admin" defaultOpen={defaultOpenFor('Admin')}>
           <CollapsibleGroup label="User">
             <SidebarItem label="New User" href="/dashboard/admin/user/new_user" />
             <SidebarItem label="View User" href="/dashboard/admin/user/view_user" />
@@ -144,7 +152,7 @@ export default function Sidebar() {
 
       {/* Clients Section */}
       {canShow('Clients') && (
-        <CollapsibleGroup label="Clients">
+        <CollapsibleGroup label="Clients" defaultOpen={defaultOpenFor('Clients')}>
           <SidebarItem
             label="Dashboard"
             href="/dashboard/home/dashboard"
@@ -166,7 +174,7 @@ export default function Sidebar() {
 
       {/* Project Section */}
       {canShow('Project') && (
-        <CollapsibleGroup label="Project">
+        <CollapsibleGroup label="Project" defaultOpen={defaultOpenFor('Project')}>
           <CollapsibleGroup label="Project">
             <SidebarItem
               label="Project Estimation"

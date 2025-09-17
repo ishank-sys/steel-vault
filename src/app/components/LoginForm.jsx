@@ -37,7 +37,7 @@ export default function LoginPage() {
     return (
         <div className="flex flex-col min-h-screen">
             <Navbar />
-            <div className="relative flex-1 flex items-center justify-center px-4 overflow-hidden">
+            <div className="relative flex-1 flex items-center justify-center px-4 overflow-hidden" suppressHydrationWarning>
                 {/* Background Image */}
                 <div className="absolute inset-0 -z-10">
                     <Image
@@ -46,6 +46,7 @@ export default function LoginPage() {
                         fill
                         sizes="100vw"
                         className="object-cover"
+                        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
                         priority
                     />
                 </div>

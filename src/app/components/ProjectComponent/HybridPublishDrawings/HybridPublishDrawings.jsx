@@ -97,6 +97,23 @@ const handleNextClick = () => {
     });
   }, []);
 
+  // Select-All support for the table
+  const isAllSelected = useMemo(
+    () => mappedDrawings.length > 0 && selectedRows.size === mappedDrawings.length,
+    [mappedDrawings.length, selectedRows]
+  );
+
+  const toggleSelectAll = useCallback(() => {
+    setSelectedRows((prev) => {
+      if (prev.size === mappedDrawings.length) {
+        return new Set();
+      }
+      const all = new Set();
+      for (let i = 0; i < mappedDrawings.length; i++) all.add(i);
+      return all;
+    });
+  }, [mappedDrawings.length]);
+
   const handleSelectAllModal = useCallback((e) => {
     if (e.target.checked) {
       setSelectedModalFiles(new Set(modalFiles.map((f) => f.name)));
@@ -306,13 +323,28 @@ const handleNextClick = () => {
       </div>
 
       {/* Drawing Table */}
-      <div className="overflow-x-auto border rounded mb-6">
+      <div className="overflow-auto max-h-[60vh] border rounded mb-6">
         <table className="w-full text-sm">
           <thead className="bg-cyan-800 text-white text-left">
             <tr>
               {tableHeaders.map((heading, i) => (
-                <th key={i} className="p-2">
-                  {heading}
+                <th
+                  key={i}
+                  className="p-2 align-middle sticky top-0 z-10 bg-cyan-800"
+                >
+                  {i === 0 ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={isAllSelected}
+                        onChange={toggleSelectAll}
+                        aria-label="Select all rows"
+                      />
+                      <span className="font-semibold">{heading}</span>
+                    </div>
+                  ) : (
+                    heading
+                  )}
                 </th>
               ))}
             </tr>
@@ -335,7 +367,12 @@ const handleNextClick = () => {
 
       {/* Footer */}
       <div className="flex justify-between mt-6">
-        <button className="btn-primary" onClick={handleNextClick}>Next</button>
+        <button
+          className="relative z-20 inline-flex items-center justify-center px-6 py-2.5 rounded-md text-white bg-teal-700 border border-teal-700 bg-gradient-to-r from-teal-600 to-cyan-600 shadow-md hover:shadow-lg hover:from-teal-700 hover:to-cyan-700 focus:outline-none focus:ring-2 focus:ring-teal-400 transition-all"
+          onClick={handleNextClick}
+        >
+          Next
+        </button>
         <button className="btn-secondary" onClick={() => router.push("/dashboard/project/project/publish_drawings")}
         >Back To TL</button>
       </div>
@@ -410,7 +447,11 @@ const handleNextClick = () => {
 
 // Memoized TableRow component to prevent unnecessary re-renders
 const TableRow = React.memo(({ drawing, index, isSelected, isVoided, onToggleSelection, onViewAttachment }) => (
-  <tr className="even:bg-gray-50">
+  <tr
+    className={`even:bg-gray-50 hover:bg-gray-100 transition-colors ${
+      isSelected ? 'bg-teal-50' : ''
+    }`}
+  >
     <td className="p-2 text-center">
       <input
         type="checkbox"

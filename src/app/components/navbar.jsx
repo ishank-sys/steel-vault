@@ -13,9 +13,8 @@ const Navbar = ({ isLoggedIn = false, adminOnly = false }) => {
   return (
     <nav
       className=" px-4 py-2"
-      style={{
-        background: "linear-gradient(to right, white 0%, white 25%, #176993 100%)"
-      }}
+      style={{ background: 'linear-gradient(to right, white 0%, white 25%, #176993 100%)' }}
+      suppressHydrationWarning
     >
       <div className="container mx-auto flex items-center justify-between max-w-full">
         <Link href="/" className="flex items-center gap-2">
