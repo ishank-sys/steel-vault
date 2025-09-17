@@ -1,5 +1,6 @@
 'use client';
 import React, { useEffect, useMemo, useState } from 'react';
+import { uploadToGCSDirect } from '@/lib/uploadToGCS';
 import { useSession } from 'next-auth/react';
 
 export default function FileTransferPanel() {
@@ -51,45 +52,14 @@ export default function FileTransferPanel() {
     setUploadProgress(0);
 
     try {
-      const form = new FormData();
-      form.append('file', selectedFile);
-      form.append('clientId', selectedClientId);
-      form.append('projectId', selectedProjectId);
-
-      const headers = {};
-      if (currentUserEmail) headers['x-user-email'] = currentUserEmail;
-
-      // Use XMLHttpRequest for upload progress
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', '/api/upload', true);
-      Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
-
-      xhr.upload.onprogress = (event) => {
-        if (event.lengthComputable) {
-          setUploadProgress(Math.round((event.loaded / event.total) * 100));
-        }
-      };
-
-      xhr.onload = () => {
-        setLoading(false);
-        if (xhr.status >= 200 && xhr.status < 300) {
-          let json = {};
-          try { json = JSON.parse(xhr.responseText); } catch {}
-          setResultMsg(json.message || 'Uploaded');
-          if (json.record) setLastUploaded(json.record);
-        } else {
-          let json = {};
-          try { json = JSON.parse(xhr.responseText); } catch {}
-          setResultMsg(`Upload failed: ${json.error || xhr.statusText}`);
-        }
-      };
-
-      xhr.onerror = () => {
-        setLoading(false);
-        setResultMsg('Unexpected error');
-      };
-
-      xhr.send(form);
+      const { record } = await uploadToGCSDirect(selectedFile, {
+        clientId: Number(selectedClientId),
+        projectId: Number(selectedProjectId),
+        onProgress: setUploadProgress,
+      });
+      setLoading(false);
+      setResultMsg('Uploaded');
+      setLastUploaded(record || null);
     } catch (e) {
       setLoading(false);
       setResultMsg(e && e.message ? e.message : 'Unexpected error');

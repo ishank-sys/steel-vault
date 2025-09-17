@@ -4,6 +4,7 @@ import React, { useRef, useState, useCallback, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import JSZip from "jszip";
 import { saveAs } from 'file-saver';
+import { uploadToGCSDirect } from '@/lib/uploadToGCS';
 import useDrawingStore from '../../../../src/stores/useDrawingStore';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -703,58 +704,19 @@ const handlePublish = async () => {
     } catch (e) {}
 
 
-    // Upload ZIP via signed URL (avoid streaming on the server)
-    // 🚫 No signed URL, no CORS. Send to our server; server streams to GCS.
+    // Upload ZIP directly to GCS with progress, then log JSON automatically
     const zipFile = new File([content], `${zipName || 'Transmittal'}.zip`, { type: 'application/zip' });
 
-    // Build form data for /api/upload (our Node runtime route.js)
-    const form = new FormData();
-    form.append('file', zipFile);
-    if (clientId != null) form.append('clientId', String(clientId));
-    if (projectIdToSend != null) form.append('projectId', String(projectIdToSend));
-
-    const headers = {};
-    // If you want Code 1-style inference, pass the user’s email so the route can resolve client
-    try {
-      const meRes = await fetch('/api/users/me');
-      if (meRes.ok) {
-        const me = await meRes.json();
-        if (me?.email) headers['x-user-email'] = me.email;
-      }
-    } catch {}
-
     setIsPublishing(true);
+    const res = await uploadToGCSDirect(zipFile, {
+      clientId: clientId ?? undefined,
+      projectId: projectIdToSend ?? undefined,
+      onProgress: setUploadProgress,
+    });
 
-    // Use XMLHttpRequest for upload progress
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/upload', true);
-    Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
-
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable) {
-        setUploadProgress(Math.round((event.loaded / event.total) * 100));
-      }
-    };
-
-    xhr.onload = () => {
-      setIsPublishing(false);
-      let json = {};
-      try { json = JSON.parse(xhr.responseText); } catch {}
-      if (xhr.status >= 200 && xhr.status < 300) {
-        setPublishResult({ success: true, data: json });
-      } else {
-        setPublishResult({ success: false, error: json.error || xhr.statusText });
-      }
-      setShowPublishModal(true);
-    };
-
-    xhr.onerror = () => {
-      setIsPublishing(false);
-      setPublishResult({ success: false, error: 'Unexpected error' });
-      setShowPublishModal(true);
-    };
-
-    xhr.send(form);
+    setIsPublishing(false);
+    setPublishResult({ success: true, data: res });
+    setShowPublishModal(true);
 
   } catch (e) {
     console.error('Publish failed', e);
