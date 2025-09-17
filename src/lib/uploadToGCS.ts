@@ -43,12 +43,15 @@ export async function uploadToGCSDirect(
       logType: "EMPLOYEE_UPLOAD",
     }),
   });
+  if (!logRes.ok) {
+    let msg = "";
+    try { msg = await logRes.text(); } catch {}
+    throw new Error(msg || `Logging failed with status ${logRes.status}`);
+  }
   let record: any = null;
   try {
-    if (logRes.ok) {
-      const json = await logRes.json();
-      record = json?.record ?? null;
-    }
+    const json = await logRes.json();
+    record = json?.record ?? null;
   } catch {}
 
   return { objectPath, size: file.size, record };

@@ -34,16 +34,27 @@ export async function POST(req) {
     const cleanClientId = typeof clientId === "string" ? parseInt(clientId, 10) : Number(clientId);
     const cleanProjectId = typeof projectId === "string" ? parseInt(projectId, 10) : Number(projectId);
 
+    // Enforce non-null clientId/projectId per schema requirements
+    if (!Number.isFinite(cleanClientId) || !Number.isFinite(cleanProjectId)) {
+      return NextResponse.json({ error: "clientId and projectId are required and must be numeric" }, { status: 400 });
+    }
+
     // Strip any gs://bucket/ prefix from storagePath when logging in DocumentLog
     const normalizedPath = String(storagePath).replace(/^gs:\/\/[^/]+\//, "");
+
+    // Prisma Int is 32-bit signed; clamp extremely large sizes
+    let normSize = Number(size);
+    if (!Number.isFinite(normSize) || normSize < 0) normSize = 0;
+    const INT_MAX = 2147483647;
+    if (normSize > INT_MAX) normSize = INT_MAX;
 
     const record = await prisma.documentLog.create({
       data: {
         fileName: originalName,
-        clientId: Number.isFinite(cleanClientId) ? cleanClientId : null,
-        projectId: Number.isFinite(cleanProjectId) ? cleanProjectId : null,
+        clientId: cleanClientId,
+        projectId: cleanProjectId,
         storagePath: normalizedPath,
-        size: Number.isFinite(Number(size)) ? Number(size) : null,
+        size: normSize,
         logType: logType || "EMPLOYEE_UPLOAD",
       },
     });
@@ -52,10 +63,10 @@ export async function POST(req) {
     try {
       await prisma.upload.create({
         data: {
-          clientId: Number.isFinite(cleanClientId) ? cleanClientId : null,
+          clientId: cleanClientId,
           filename: originalName,
           storagePath: storagePath,
-          size: Number.isFinite(Number(size)) ? Number(size) : null,
+          size: normSize,
         },
       });
     } catch (e) {
