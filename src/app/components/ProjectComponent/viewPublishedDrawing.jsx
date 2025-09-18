@@ -28,21 +28,21 @@ const viewPublishedDrawing = () => {
           fetch("/api/projects"),
           fetch("/api/clients"),
         ]);
-        const logsData = await logsRes.json();
-        const projectsData = await projectsRes.json();
-        const clientsData = await clientsRes.json();
+        const logsData = logsRes.ok ? await logsRes.json() : [];
+        const projectsData = projectsRes.ok ? await projectsRes.json() : [];
+        const clientsData = clientsRes.ok ? await clientsRes.json() : [];
 
         // Map projectId -> projectName
-        const pMap = {};
-        projectsData.forEach(p => { pMap[p.id] = p.name; });
+  const pMap = {};
+  (projectsData || []).forEach(p => { pMap[p.id] = p.name || p.projectName || p.id; });
         setProjectMap(pMap);
         // Map clientId -> clientName
-        const cMap = {};
-        clientsData.forEach(c => { cMap[c.id] = c.name; });
+  const cMap = {};
+  (clientsData || []).forEach(c => { cMap[c.id] = c.name || c.clientName || c.id; });
         setClientMap(cMap);
 
         // Add serial number, project name, client name, formatted date/time
-        const logsWithNames = logsData.map((log, idx) => ({
+        const logsWithNames = (logsData || []).map((log, idx) => ({
           slno: idx + 1,
           clientName: cMap[log.clientId] || log.clientId,
           projectName: pMap[log.projectId] || log.projectId,
@@ -71,9 +71,9 @@ const viewPublishedDrawing = () => {
         headers={['S.No.', 'Client Name', 'Project Name', 'File Name', 'Upload Date', 'Upload Time']}
         keys={['slno', 'clientName', 'projectName', 'fileName', 'uploadDate', 'uploadTime']}
         data={filteredData}
-        showActions={true}
-        actionHeaderText="View"
-        onView={(row) => console.log('View:', row)}
+        //showActions={true}
+        //actionHeaderText="View"
+        //onView={(row) => console.log('View:', row)}
       />
     </div>
   );

@@ -177,12 +177,8 @@ export default function Sidebar({ initialUserType = null }) {
         <CollapsibleGroup label="Project" defaultOpen={defaultOpenFor('Project')}>
           <CollapsibleGroup label="Project">
             <SidebarItem
-              label="Project Estimation"
+              label="Project Creation"
               href="/dashboard/project/project/project_estimation"
-            />
-            <SidebarItem
-              label="View Project Estimation"
-              href="/dashboard/project/project/view_project_estimation"
             />
             <SidebarItem
               label="View Project Summary"
@@ -206,12 +202,9 @@ export default function Sidebar({ initialUserType = null }) {
             />
             <SidebarItem
               label="Send Drawings Submittal"
-              href="/dashboard/project/project/send_drawings_submittal"
+              href="src/app/components/ProjectComponent/SendDrawingsSubmittals.jsx"
             />
-            <SidebarItem
-              label="View Project Files"
-              href="/dashboard/project/view-project-files"
-            />
+            
           </CollapsibleGroup>
 
           <CollapsibleGroup label="Item">
