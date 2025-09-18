@@ -3,9 +3,7 @@
 import React, { useState } from "react";
 import Image from "next/image";
 import { signIn } from "next-auth/react";
-import Navbar from "../components/navbar";
 import { useRouter } from "next/navigation";
-import Footer from "../components/footer";
 
 export default function LoginPage() {
     const [email, setEmail] = useState("");
@@ -35,93 +33,121 @@ export default function LoginPage() {
         }
     };
     return (
-        <div className="flex flex-col min-h-screen">
-            <Navbar />
-            <div className="relative flex-1 flex items-center justify-center px-4 overflow-hidden" suppressHydrationWarning>
-                {/* Background Image */}
-                <div className="absolute inset-0 -z-10">
-                    <Image
-                        src="/bg-image.webp"
-                        alt="Background"
-                        fill
-                        sizes="100vw"
-                        className="object-cover"
-                        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
-                        priority
-                    />
-                </div>
-
-                {/* Login Form */}
-                <form
-                    onSubmit={handleSubmit}
-                    className="relative z-10 max-w-sm w-full bg-white/70 p-6 rounded-xl shadow-2xl backdrop-blur-sm"
-                >
-                    <h5 className="mb-4 text-center text-gray-800 font-bold text-lg">
-                        Please enter your email and password
-                    </h5>
-
-                    {errorMsg && (
-                        <div className="mb-4 text-red-600 text-center font-medium">
-                            {errorMsg}
-                        </div>
-                    )}
-
-                    {/* Email */}
-                    <div className="mb-6">
-                        <label
-                         suppressHydrationWarning
-                            htmlFor="email"
-                            className="block mb-2 text-base font-medium text-gray-700"
-                        >
-                            Email
-                        </label>
-                        <input
-                            type="email"
-                            id="email"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            className="bg-gray-100 text-gray-900 text-sm rounded-lg block w-full p-2 placeholder-gray-400 focus:ring-2 focus:ring-blue-400 focus:outline-none transition"
-                            placeholder="user@example.com"
-                            autoComplete="email"
-                            required
-                        />
-                    </div>
-
-                    {/* Password */}
-                    <div className="mb-6">
-                        <label
-                            htmlFor="password"
-                            className="block mb-2 text-base font-medium text-gray-700"
-                        >
-                            Password
-                        </label>
-                        <input
-                            type="password"
-                            id="password"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            className="bg-gray-100 text-gray-900 text-sm rounded-lg block w-full p-2 placeholder-gray-400 focus:ring-2 focus:ring-blue-400 focus:outline-none transition"
-                            placeholder="••••••••"
-                            autoComplete="current-password"
-                            required
-                        />
-                    </div>
-
-                   
-
-
-                    {/* Submit */}
-                    <button
-                        type="submit"
-                        disabled={loading}
-                        className={`text-white bg-gradient-to-r from-green-600 via-green-500 to-green-700 focus:ring-4 focus:outline-none focus:ring-blue-300 font-semibold rounded-lg text-base w-full px-5 py-2 transition active:scale-95 ${loading ? "opacity-50 cursor-not-allowed" : ""
-                            }`}
-                    >
-                        {loading ? "Logging in..." : "Submit"}
-                    </button>
-                </form>
+        <div className="relative flex flex-col min-h-screen">
+            {/* Background image with subtle dark overlay */}
+            <div aria-hidden className="absolute inset-0 -z-10">
+                <div
+                    className="absolute inset-0"
+                    style={{
+                        backgroundImage: "url('/landing-bg.jpg'), url('/bg-image.webp')",
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center',
+                        backgroundRepeat: 'no-repeat',
+                    }}
+                />
+                <div className="absolute inset-0 bg-gradient-to-br from-black/40 via-black/30 to-transparent" />
             </div>
-            <Footer />
+
+            <div className="flex-1 flex items-center justify-center px-4 py-10">
+                <div className="w-full max-w-5xl bg-white rounded-2xl shadow-xl overflow-hidden grid grid-cols-1 md:grid-cols-2">
+                    {/* Left: Welcome panel (solid brand color, centered content) */}
+                    <div className="relative hidden md:flex items-center justify-center p-8 text-white bg-[#186c94] text-center">
+                        <div className="relative z-10 max-w-sm flex flex-col items-center">
+                            <Image
+                                src="/Pi7_SO_logo.png"
+                                alt="Structures Online logo"
+                                width={760}
+                                height={146}
+                                className="mb-4 h-auto w-auto object-contain"
+                                priority
+                            />
+                            <h1 className="text-3xl font-bold mb-3"></h1>
+                            <p className="text-white/90"></p>
+                        </div>
+                        {/* Decorative map lines / dots */}
+                        <div className="pointer-events-none absolute inset-0 opacity-35 z-0">
+  <svg aria-hidden viewBox="0 0 500 300" className="w-full h-full">
+    <defs>
+      <linearGradient id="g1" x1="0" x2="1">
+        <stop offset="0%" stopColor="#ffffff" stopOpacity="0.5" />
+        <stop offset="100%" stopColor="#ffffff" stopOpacity="0.1" />
+      </linearGradient>
+    </defs>
+    <g fill="none" stroke="url(#g1)" strokeWidth="2">
+      {/* More strokes added for denser pattern */}
+      <path d="M0,40 C120,20 280,100 400,70" />
+      <path d="M0,80 C130,60 270,120 400,90" />
+      <path d="M0,120 C125,100 275,160 400,130" />
+      <path d="M0,160 C130,140 270,180 400,150" />
+      <path d="M0,200 C110,190 260,210 400,190" />
+      <path d="M0,240 C120,220 270,250 400,230" />
+      <path d="M0,280 C140,260 280,300 400,280" />
+      <path d="M0,320 C150,300 290,340 400,320" />
+      <path d="M0,360 C130,340 280,380 400,360" />
+    </g>
+  </svg>
+</div>
+
+                    </div>
+
+                    {/* Right: Sign In form */}
+                    <div className="p-8">
+                        <h2 className="text-2xl font-semibold text-gray-900 mb-6">Sign In to Steel Vault!</h2>
+
+                        {errorMsg && (
+                            <div className="mb-4 text-red-600 text-sm font-medium">
+                                {errorMsg}
+                            </div>
+                        )}
+
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            <div>
+                                <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">Username or email</label>
+                                <input
+                                    type="email"
+                                    id="email"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#186c94]"
+                                    placeholder="user@example.com"
+                                    autoComplete="email"
+                                    required
+                                />
+                            </div>
+
+                            <div>
+                                <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                                <input
+                                    type="password"
+                                    id="password"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#186c94]"
+                                    placeholder="••••••••"
+                                    autoComplete="current-password"
+                                    required
+                                />
+                            </div>
+
+                            <div className="flex items-center justify-between text-sm">
+                                <label className="inline-flex items-center gap-2 select-none">
+                                    <input type="checkbox" className="rounded border-gray-300 text-[#186c94] focus:ring-[#186c94]" />
+                                    <span className="text-gray-700">Remember me</span>
+                                </label>
+                                <a href="/clients/change-password" className="text-[#186c94] hover:underline">Forgot password?</a>
+                            </div>
+
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                className={`w-full rounded-full bg-[#186c94] hover:bg-[#145a79] text-white py-2 text-sm font-semibold transition ${loading ? 'opacity-70 cursor-not-allowed' : ''}`}
+                            >
+                                {loading ? 'Signing in…' : 'Sign In'}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
         </div>
     );
 }
