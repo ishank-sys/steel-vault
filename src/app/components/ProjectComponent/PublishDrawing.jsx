@@ -13,6 +13,53 @@ const dummyProjects = {
   P003: "Mall Expansion",
 };
 
+// Small reusable (i) info popover button
+const InfoPopover = ({ title = 'Info', children }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  // Close on outside click and Escape
+  React.useEffect(() => {
+    const onDocClick = (e) => {
+      if (!ref.current) return;
+      if (!ref.current.contains(e.target)) setOpen(false);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, []);
+
+  return (
+    <div className="relative inline-block align-middle" ref={ref}>
+      <button
+        type="button"
+        aria-label={`${title} help`}
+        onClick={() => setOpen((v) => !v)}
+        className="ml-2 inline-flex h-5 w-5 items-center justify-center rounded-full border border-gray-300 bg-white text-[11px] font-bold text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-600"
+        title={title}
+      >
+        i
+      </button>
+      {open && (
+        <div className="absolute z-30 mt-2 w-80 max-w-[80vw] rounded-md border border-gray-200 bg-white text-gray-800 shadow-lg top-full left-0">
+          {/* pointer arrow */}
+          <div className="absolute -top-1.5 left-4 h-3 w-3 rotate-45 bg-white border-l border-t border-gray-200" />
+          <div className="p-3 text-xs leading-relaxed">
+            <div className="mb-1 font-semibold">{title}</div>
+            <div className="text-gray-700">{children}</div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const formatOptions = [
   "Project-Drg-Revision",
   "Drg-Revision",
@@ -934,7 +981,17 @@ const PublishDrawing = () => {
             <div className="space-y-4">
               {/* Excel Upload Box */}
               <div className="rounded-lg border border-gray-300 bg-gray-50 p-4 shadow-sm">
-                <div className="text-sm font-semibold text-gray-700 mb-2">Upload Excel (.xls, .xlsx)</div>
+                <div className="text-sm font-semibold text-gray-700 mb-2 flex items-center">
+                  Upload Excel (.xls, .xlsx)
+                  <InfoPopover title="Excel upload rules">
+                    <ul className="list-disc pl-5 space-y-1">
+                      <li>Accepted: .xls, .xlsx (first sheet is read)</li>
+                      <li>Headers required: Dr No, Description, Rev, Rev Remarks, Mod By, Dr By, Ch By, Category</li>
+                      <li>Duplicate DrgNo entries are supported; Category decides the Type</li>
+                      <li>After upload, click “Attach .xls File” to add rows to the table</li>
+                    </ul>
+                  </InfoPopover>
+                </div>
                 <div className="flex gap-2 items-center flex-wrap">
                   <input
                     type="file"
@@ -952,7 +1009,18 @@ const PublishDrawing = () => {
 
               {/* PDF Upload Box */}
               <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 shadow-sm">
-                <div className="text-sm font-semibold text-blue-900 mb-2">Attach PDF Drawings</div>
+                <div className="text-sm font-semibold text-blue-900 mb-2 flex items-center">
+                  Attach PDF Drawings
+                  <InfoPopover title="PDF attachment rules">
+                    <ul className="list-disc pl-5 space-y-1">
+                      <li>Accepted: .pdf</li>
+                      <li>Select a naming format; files must match it unless you choose “No Format”</li>
+                      <li>Matching uses the drawing token (before first symbol like '-', ' ', '_', '['). Suffix FR/TR is ignored.</li>
+                      <li>If the same DrgNo exists in multiple categories, filename hints like “main part”, “part”, “ga/erection” decide where it attaches.</li>
+                      <li>Each drawing holds one PDF; a new match replaces the previous.</li>
+                    </ul>
+                  </InfoPopover>
+                </div>
                 <div className="flex gap-2 items-center flex-wrap">
                   <input
                     type="file"
