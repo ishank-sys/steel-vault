@@ -6,25 +6,24 @@ const ProjectCreation = () => {
   const [form, setForm] = useState({
     projectName: '',
     clientId: '',
-    estimationDate: '', // Project Est. Date
-    startDate: '',      // Prj. Start Date
-    endDate: '',        // Prj. End Date
-    totalProjectHours: '', // Total TL Hrs.
-    totalSheetQty: '',     // Total Sheets
-    totalDays: '',         // Total Days (derived or entered)
+    estimationDate: '',
+    startDate: '',
+    endDate: '',
+    totalProjectHours: '',
+    totalSheetQty: '',
+    totalDays: '',
   });
 
   useEffect(() => {
     fetch('/api/clients').then(r => r.ok ? r.json() : []).then(setClients).catch(() => {});
   }, []);
 
-  // Auto-calc totalDays when start/end set (inclusive)
   useEffect(() => {
     if (form.startDate && form.endDate) {
       const s = new Date(form.startDate);
       const e = new Date(form.endDate);
       if (!isNaN(s) && !isNaN(e) && e >= s) {
-        const diff = Math.round((e - s) / (1000*60*60*24)) + 1; // inclusive
+        const diff = Math.round((e - s) / (1000*60*60*24)) + 1;
         setForm(prev => ({ ...prev, totalDays: String(diff) }));
       }
     }
@@ -44,10 +43,7 @@ const ProjectCreation = () => {
 
   const handleSave = async () => {
     const errs = validate();
-    if (errs.length) {
-      alert(errs.join('\n'));
-      return;
-    }
+    if (errs.length) { alert(errs.join('\n')); return; }
     setSaving(true);
     try {
       const res = await fetch('/api/projects', {
@@ -57,8 +53,8 @@ const ProjectCreation = () => {
           projectName: form.projectName,
           clientId: form.clientId,
           estimationDate: form.estimationDate || null,
-            startDate: form.startDate || null,
-            endDate: form.endDate || null,
+          startDate: form.startDate || null,
+          endDate: form.endDate || null,
           totalProjectHours: form.totalProjectHours || null,
           totalSheetQty: form.totalSheetQty || null,
           totalDays: form.totalDays || null,
@@ -67,14 +63,10 @@ const ProjectCreation = () => {
       if (!res.ok) throw new Error('Failed to create project');
       const created = await res.json();
       alert(`Project created with Project No: ${created.projectNo}`);
-      setForm({
-        projectName: '', clientId: '', estimationDate: '', startDate: '', endDate: '', totalProjectHours: '', totalSheetQty: '', totalDays: ''
-      });
+      setForm({ projectName: '', clientId: '', estimationDate: '', startDate: '', endDate: '', totalProjectHours: '', totalSheetQty: '', totalDays: '' });
     } catch (e) {
       alert(e.message);
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   };
 
   return (

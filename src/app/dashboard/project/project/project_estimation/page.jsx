@@ -1,10 +1,10 @@
 'use client'
 import React from 'react'
-import ProjectEstimation from '../../../../components/ProjectComponent/ProjectEstimation'
+import ProjectCreation from '../../../../components/ProjectComponent/ProjectCreation'
 
 const page = () => {
   return (
-    <ProjectEstimation />
+  <ProjectCreation />
   )
 }
 

@@ -16,14 +16,15 @@ const ViewProjectSummaryPage = () => {
         const formatted = data.map((p) => ({
           id: p.id,
           projectname: p.name || "-",
-          projectno: p.projectNo || "-",
+            projectno: p.projectNo || "-",
           clientname: p.client?.name || "-",
-          prjestdate: p.estimatedDate ? new Date(p.estimatedDate).toLocaleDateString() : "-",
+          prjestdate: p.estimationDate ? new Date(p.estimationDate).toLocaleDateString() : "-",
           prjstartdate: p.startDate ? new Date(p.startDate).toLocaleDateString() : "-",
           prjenddate: p.endDate ? new Date(p.endDate).toLocaleDateString() : "-",
-          totaltlhrs: p.totalTlHours?.toFixed(2) ?? "-",
-          totalsheets: p.totalSheets?.toFixed(1) ?? "-",
-          totaldays: p.totalDays?.toString() ?? "-",
+          // total TL hours maps to totalProjectHours (string). Display raw.
+          totaltlhrs: p.totalProjectHours || "-",
+          totalsheets: p.totalSheetQty || "-",
+          totaldays: p.totalDays != null ? String(p.totalDays) : "-",
         }));
         setProjectData(formatted);
         setFilteredData(formatted);

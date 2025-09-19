@@ -50,8 +50,8 @@ export default function LoginPage() {
 
             <div className="flex-1 flex items-center justify-center px-4 py-10">
                 <div className="w-full max-w-5xl bg-white rounded-2xl shadow-xl overflow-hidden grid grid-cols-1 md:grid-cols-2">
-                    {/* Left: Welcome panel (solid brand color, centered content) */}
-                    <div className="relative hidden md:flex items-center justify-center p-8 text-white bg-[#186c94] text-center">
+                    {/* Left: Welcome panel (now with subtle teal/cyan gradient, blue still dominant) */}
+                    <div className="relative hidden md:flex items-center justify-center p-8 text-white bg-gradient-to-br from-[#186c94] via-[#137b8f] to-[#0fa9b8] text-center">
                         <div className="relative z-10 max-w-sm flex flex-col items-center">
                             <Image
                                 src="/Pi7_SO_logo.png"
@@ -108,7 +108,7 @@ export default function LoginPage() {
                                     id="email"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
-                                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#186c94]"
+                                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-400/60 focus:border-[#186c94]"
                                     placeholder="user@example.com"
                                     autoComplete="email"
                                     required
@@ -122,7 +122,7 @@ export default function LoginPage() {
                                     id="password"
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
-                                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#186c94]"
+                                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-400/60 focus:border-[#186c94]"
                                     placeholder="••••••••"
                                     autoComplete="current-password"
                                     required
@@ -134,15 +134,15 @@ export default function LoginPage() {
                                     <input type="checkbox" className="rounded border-gray-300 text-[#186c94] focus:ring-[#186c94]" />
                                     <span className="text-gray-700">Remember me</span>
                                 </label>
-                                <a href="/clients/change-password" className="text-[#186c94] hover:underline">Forgot password?</a>
+                                <a href="/clients/change-password" className="text-[#186c94] hover:underline"></a>
                             </div>
 
                             <button
                                 type="submit"
                                 disabled={loading}
-                                className={`w-full rounded-full bg-[#186c94] hover:bg-[#145a79] text-white py-2 text-sm font-semibold transition ${loading ? 'opacity-70 cursor-not-allowed' : ''}`}
+                                className={`relative w-full rounded-full bg-[#186c94] bg-gradient-to-r from-[#186c94] via-[#167f99] to-[#0fa9b8] hover:from-[#145a79] hover:via-[#0e6d85] hover:to-[#0b8c9e] text-white py-2 text-sm font-semibold transition shadow-sm hover:shadow-md ${loading ? 'opacity-70 cursor-not-allowed' : ''}`}
                             >
-                                {loading ? 'Signing in…' : 'Sign In'}
+                                <span className="relative z-10">{loading ? 'Signing in…' : 'Sign In'}</span>
                             </button>
                         </form>
                     </div>
