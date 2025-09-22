@@ -197,10 +197,6 @@ export default function Sidebar({ initialUserType = null }) {
               href="/dashboard/project/project/publish_drawings"
             />
             <SidebarItem
-              label="View Unpublish Drawings"
-              href="/dashboard/project/project/view_unpublish_drawings"
-            />
-            <SidebarItem
               label="Send Drawings Submittal"
               href="src/app/components/ProjectComponent/SendDrawingsSubmittals.jsx"
             />
