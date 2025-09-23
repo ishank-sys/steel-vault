@@ -8,21 +8,28 @@ datasource db {
 }
 
 model Client {
-  id              Int           @id @default(autoincrement())
-  name            String
-  email           String?       @unique
-  companyName     String?
-  contactNo       String?
-  address         String?
-  dbUrl           String?       @map("DB_URL")
-  configuration   Json          @default("{}")
-  ccListData      Json          @default("[]")
-  folderStructure Json          @default("{}")
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-  documentLogs    DocumentLog[]
-  projects        Project[]     @relation("ClientProjects")
-  users           User[]        @relation("ClientUsers")
+  id                    Int           @id @default(autoincrement())
+  name                  String
+  email                 String?       @unique
+  companyName           String?
+  contactNo             String?
+  address               String?
+  dbUrl                 String?       @map("DB_URL")
+  configuration         Json          @default("{}")
+  ccListData            Json          @default("[]")
+  folderStructure       Json          @default("{}")
+  totalProjects         Int           @default(0)
+  activeProjects        Int           @default(0)
+  completedProjects     Int           @default(0)
+  totalProjectValue     Decimal?      @db.Decimal(15,2)
+  totalWeightage        Decimal?      @db.Decimal(10,2)
+  lastActivityDate      DateTime?
+  attachments           Json          @default("[]")
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+  documentLogs          DocumentLog[]
+  projects              Project[]     @relation("ClientProjects")
+  users                 User[]        @relation("ClientUsers")
 }
 
 model User {
@@ -44,31 +51,31 @@ model User {
 model Project {
   id                      Int           @id @default(autoincrement())
   projectNo               String        @unique
+  solProjectNo            String?       @unique // SOL internal project number
   name                    String
   description             String?
   clientId                Int
-  estimatedBy             String?
+  solTLId                 Int?          // Team Lead assignment
+  status                  String        @default("PLANNING") // PLANNING, IN_PROGRESS, ON_HOLD, COMPLETED, CANCELLED, DELAYED
+  priority                String        @default("MEDIUM") // HIGH, MEDIUM, LOW, CRITICAL
+  progress                Decimal       @default(0.0) @db.Decimal(5,2) // 0.00 to 100.00
+  branch                  String?       // Project branch/location
+  startDate               DateTime?
+  endDate                 DateTime?
+  expectedCompletion      DateTime?
+  totalDays               Int?
   estimationDate          DateTime?
   totalProjectHours       String?
+  actualProjectHours      String?
   totalSheetQty           String?
-  fabricatorJobNo         String?
-  fabricatorName          String?
+  weightTonnage           String?       // Total weight/tonnage
+  projectComplexity       String?       // SIMPLE, MEDIUM, COMPLEX, HIGHLY_COMPLEX
   solJobNo                String?
-  jobName                 String?
   projectType             String?
   projectSubType          String?
-  solTLId                 Int?
-  fabricatorPMName        String?
-  weightTonnage           String?
-  latestSubmission        DateTime?
-  projectDataFolder       String?
-  projectStatusReport     String?
-  projectIFCProgressChart String?
-  estimationRows          Json          @default("[]")
+  lastUpdated             DateTime      @updatedAt @default(now())
+  lastActivityDate        DateTime?
   createdAt               DateTime      @default(now())
-  endDate                 DateTime?
-  startDate               DateTime?
-  totalDays               Int?
   documentLogs            DocumentLog[]
   client                  Client        @relation("ClientProjects", fields: [clientId], references: [id])
   solTL                   User?         @relation("UserSolTL", fields: [solTLId], references: [id])
