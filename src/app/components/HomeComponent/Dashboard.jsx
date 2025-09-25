@@ -17,30 +17,21 @@ export default function Dashboard() {
     async function fetchData() {
       try {
         // Get current user info
-  const userRes = await fetch('/api/users/me', { cache: 'no-store' });
-  if (!userRes.ok) throw new Error('Failed to load user');
-  const userData = await userRes.json();
+        const userRes = await fetch('/api/users/me');
+        const userData = await userRes.json();
         setUser(userData);
 
-        // Build projects URL depending on role (clients get server-side filtered list)
-        const type = String(userData?.userType || '').toLowerCase();
-        const clientId = userData?.client?.id || userData?.clientId || null;
-        const projectsUrl = type.includes('client') && clientId
-          ? `/api/projects?clientId=${encodeURIComponent(clientId)}`
-          : '/api/projects';
-
-        // Get projects and document logs
+        // Get all projects and document logs
         const [projRes, docLogRes] = await Promise.all([
-          fetch(projectsUrl, { cache: 'no-store' }),
-          fetch('/api/document-logs', { cache: 'no-store' }),
+          fetch('/api/projects'),
+          fetch('/api/document-logs'),
         ]);
-        if (!projRes.ok) throw new Error('Failed to load projects');
-        if (!docLogRes.ok) throw new Error('Failed to load document logs');
         let projects = await projRes.json();
         const docLogs = await docLogRes.json();
 
         // Filter projects based on user type
         if (userData && userData.userType) {
+          const type = String(userData.userType).toLowerCase();
           if (type.includes('employee')) {
             // Only show projects where solTL.id === user.id
             projects = (projects || []).filter(p => p.solTL?.id === userData.id);
@@ -112,11 +103,6 @@ export default function Dashboard() {
         onFilteredDataChange={setFilteredData}
       />
       <div className="p-4 bg-white mt-6">
-        {Array.isArray(projects) && projects.length === 0 && (
-          <div className="mb-3 text-sm text-gray-600">
-            No projects found for your account.
-          </div>
-        )}
         <TableComponent
           headers={[...headers, "Document Log"]}
           keys={keys}

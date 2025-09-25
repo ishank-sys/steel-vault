@@ -39,6 +39,32 @@ export async function POST(req) {
       return NextResponse.json({ error: "clientId and projectId are required and must be numeric" }, { status: 400 });
     }
 
+    // Verify that clientId exists in the Client table before creating DocumentLog
+    try {
+      const clientExists = await prisma.client.findUnique({
+        where: { id: cleanClientId }
+      });
+      if (!clientExists) {
+        return NextResponse.json({ error: `Client with ID ${cleanClientId} does not exist` }, { status: 400 });
+      }
+    } catch (e) {
+      console.error("Failed to verify client existence:", e);
+      return NextResponse.json({ error: "Failed to verify client" }, { status: 500 });
+    }
+
+    // Verify that projectId exists in the Project table
+    try {
+      const projectExists = await prisma.project.findUnique({
+        where: { id: cleanProjectId }
+      });
+      if (!projectExists) {
+        return NextResponse.json({ error: `Project with ID ${cleanProjectId} does not exist` }, { status: 400 });
+      }
+    } catch (e) {
+      console.error("Failed to verify project existence:", e);
+      return NextResponse.json({ error: "Failed to verify project" }, { status: 500 });
+    }
+
     // Strip any gs://bucket/ prefix from storagePath when logging in DocumentLog
     const normalizedPath = String(storagePath).replace(/^gs:\/\/[^/]+\//, "");
 

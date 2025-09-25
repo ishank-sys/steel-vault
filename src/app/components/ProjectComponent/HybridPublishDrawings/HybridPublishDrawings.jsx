@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import useDrawingStore from '../../../../stores/useDrawingStore';
 import { useRouter } from 'next/navigation';
 
@@ -13,6 +13,7 @@ const HybridPublishDrawings = () => {
   const [showModal, setShowModal] = useState(false);
   const [modalFiles, setModalFiles] = useState([]);
   const [selectedModalFiles, setSelectedModalFiles] = useState(new Set());
+  const selectAllRef = useRef(null);
 
   const router = useRouter();
 
@@ -44,6 +45,27 @@ const handleNextClick = () => {
       else updated.add(index);
       return updated;
     });
+  }, []);
+
+  const allSelected = mappedDrawings.length > 0 && selectedRows.size === mappedDrawings.length;
+
+  const toggleSelectAll = useCallback(() => {
+    setSelectedRows((prev) => {
+      const total = mappedDrawings.length;
+      if (prev.size === total) {
+        return new Set(); // Deselect all
+      }
+      return new Set(Array.from({ length: total }, (_, i) => i)); // Select all indices
+    });
+  }, [mappedDrawings.length]);
+
+  const selectAllRows = useCallback(() => {
+    const total = mappedDrawings.length;
+    setSelectedRows(new Set(Array.from({ length: total }, (_, i) => i)));
+  }, [mappedDrawings.length]);
+
+  const clearSelection = useCallback(() => {
+    setSelectedRows(new Set());
   }, []);
 
   const [formData, setFormData] = useState({
@@ -96,23 +118,6 @@ const handleNextClick = () => {
       return updated;
     });
   }, []);
-
-  // Select-All support for the table
-  const isAllSelected = useMemo(
-    () => mappedDrawings.length > 0 && selectedRows.size === mappedDrawings.length,
-    [mappedDrawings.length, selectedRows]
-  );
-
-  const toggleSelectAll = useCallback(() => {
-    setSelectedRows((prev) => {
-      if (prev.size === mappedDrawings.length) {
-        return new Set();
-      }
-      const all = new Set();
-      for (let i = 0; i < mappedDrawings.length; i++) all.add(i);
-      return all;
-    });
-  }, [mappedDrawings.length]);
 
   const handleSelectAllModal = useCallback((e) => {
     if (e.target.checked) {
@@ -187,6 +192,14 @@ const handleNextClick = () => {
     setMappedDrawings(enrichedDrawings);
   }, [approvedDrawings]);
   // --- MODIFICATION ENDS HERE ---
+
+  // Keep the Select All checkbox indeterminate when partially selected
+  useEffect(() => {
+    if (!selectAllRef.current) return;
+    const total = mappedDrawings.length;
+    const count = selectedRows.size;
+    selectAllRef.current.indeterminate = count > 0 && count < total;
+  }, [mappedDrawings.length, selectedRows]);
 
   // Memoize table headers to avoid recreation
   const tableHeaders = useMemo(() => [
@@ -295,7 +308,21 @@ const handleNextClick = () => {
         </div>
       </div>
 
-      <div className="flex pt-2 gap-2 mb-4">
+      <div className="flex pt-2 gap-2 mb-4 flex-wrap items-center">
+        <button
+          className="bg-gray-200 text-gray-800 px-4 py-2 rounded text-sm"
+          type="button"
+          onClick={selectAllRows}
+        >
+          Select All
+        </button>
+        <button
+          className="bg-gray-200 text-gray-800 px-4 py-2 rounded text-sm"
+          type="button"
+          onClick={clearSelection}
+        >
+          Clear Selection
+        </button>
         <button
           className="bg-teal-800 text-white px-4 py-2 rounded text-sm"
           onClick={() => {
@@ -320,27 +347,28 @@ const handleNextClick = () => {
         >
           Unvoid Item
         </button>
+        <span className="ml-auto text-sm text-gray-600">
+          Selected: <span className="font-semibold text-gray-800">{selectedRows.size}</span> / {mappedDrawings.length}
+        </span>
       </div>
 
       {/* Drawing Table */}
-      <div className="overflow-auto max-h-[60vh] border rounded mb-6">
+      <div className="overflow-x-auto border rounded mb-6">
         <table className="w-full text-sm">
           <thead className="bg-cyan-800 text-white text-left">
             <tr>
               {tableHeaders.map((heading, i) => (
-                <th
-                  key={i}
-                  className="p-2 align-middle sticky top-0 z-10 bg-cyan-800"
-                >
+                <th key={i} className="p-2 sticky top-0 z-10 bg-cyan-800">
                   {i === 0 ? (
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center justify-center">
                       <input
+                        ref={selectAllRef}
                         type="checkbox"
-                        checked={isAllSelected}
+                        checked={allSelected}
                         onChange={toggleSelectAll}
-                        aria-label="Select all rows"
+                        title="Select/Deselect all"
+                        className="h-4 w-4 cursor-pointer accent-teal-700"
                       />
-                      <span className="font-semibold">{heading}</span>
                     </div>
                   ) : (
                     heading
@@ -367,12 +395,7 @@ const handleNextClick = () => {
 
       {/* Footer */}
       <div className="flex justify-between mt-6">
-        <button
-          className="relative z-20 inline-flex items-center justify-center px-6 py-2.5 rounded-md text-white bg-teal-700 border border-teal-700 bg-gradient-to-r from-teal-600 to-cyan-600 shadow-md hover:shadow-lg hover:from-teal-700 hover:to-cyan-700 focus:outline-none focus:ring-2 focus:ring-teal-400 transition-all"
-          onClick={handleNextClick}
-        >
-          Next
-        </button>
+        <button className="btn-primary" onClick={handleNextClick}>Next</button>
         <button className="btn-secondary" onClick={() => router.push("/dashboard/project/project/publish_drawings")}
         >Back To TL</button>
       </div>
@@ -447,16 +470,13 @@ const handleNextClick = () => {
 
 // Memoized TableRow component to prevent unnecessary re-renders
 const TableRow = React.memo(({ drawing, index, isSelected, isVoided, onToggleSelection, onViewAttachment }) => (
-  <tr
-    className={`even:bg-gray-50 hover:bg-gray-100 transition-colors ${
-      isSelected ? 'bg-teal-50' : ''
-    }`}
-  >
+  <tr className={`${isVoided ? 'bg-red-50' : ''} even:bg-gray-50`}>
     <td className="p-2 text-center">
       <input
         type="checkbox"
         checked={isSelected}
         onChange={() => onToggleSelection(index)}
+        className="h-4 w-4 accent-teal-700"
       />
     </td>
     <td className="p-2">

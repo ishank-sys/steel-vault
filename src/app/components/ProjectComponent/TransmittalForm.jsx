@@ -13,7 +13,7 @@ import { useRouter } from 'next/navigation';
 
 const TransmittalForm = () => {
   // Zustand store
-  const { selectedDrawings, approvedDrawings, drawings: storeDrawings, extras, models, projectName, projectNo } = useDrawingStore();
+  const { selectedDrawings, approvedDrawings, drawings: storeDrawings, approvedExtras, approvedModels, projectName, projectNo, selectedClientId } = useDrawingStore();
 
     const router = useRouter();
   
@@ -531,8 +531,8 @@ const handleDownload = async () => {
       extFolder.file(actualFile.name, actualFile);
     });
   };
-  addToZipByExtension(extras);
-  addToZipByExtension(models);
+  addToZipByExtension(approvedExtras);
+  addToZipByExtension(approvedModels);
 
   // Add PDF + Excel into root of ZIP
   zip.file(`${zipName || 'Transmittal'}.pdf`, pdfBlob);
@@ -549,6 +549,57 @@ const handlePublish = async () => {
 
   try {
     setUploadProgress(0);
+    setIsPublishing(true);
+
+    console.log('Starting publish process...');
+
+    // Validate required data before creating files
+    let clientId = selectedClientId;
+    console.log('Using selectedClientId from store:', clientId);
+
+    if (!clientId || !Number.isFinite(Number(clientId))) {
+      throw new Error('Please select a client in the PublishDrawing page before publishing.');
+    }
+
+    // Determine numeric projectId: projectNo is the project number, we need to find the actual database ID
+    let projectIdToSend = null;
+    try {
+      console.log('Resolving project ID for projectNo:', projectNo);
+      const pres = await fetch('/api/projects', {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (pres.ok) {
+        const pj = await pres.json();
+        console.log('Available projects:', pj?.map(p => ({ id: p.id, projectNo: p.projectNo, name: p.name })));
+        
+        // Search by projectNo field first (most likely match), then fallback to other fields
+        const found = (pj || []).find(p => 
+          String(p.projectNo) === String(projectNo) || 
+          String(p.name) === String(projectNo) || 
+          String(p.projectName) === String(projectNo) ||
+          String(p.id) === String(projectNo)
+        );
+        
+        if (found) {
+          projectIdToSend = found.id;
+          console.log('Found project:', { id: found.id, projectNo: found.projectNo, name: found.name });
+        } else {
+          console.error('No project found matching:', projectNo);
+        }
+      } else {
+        console.error('Failed to fetch projects:', pres.status, pres.statusText);
+      }
+    } catch (e) {
+      console.warn('Could not resolve projectId before publish', e?.message || e);
+    }
+
+    if (!projectIdToSend || !Number.isFinite(Number(projectIdToSend))) {
+      throw new Error(`Unable to determine project ID from "${projectNo}". Please ensure the project exists and is accessible.`);
+    }
+
+    console.log('Publishing with IDs:', { clientId: Number(clientId), projectId: Number(projectIdToSend) });
+
     // Recreate the PDF and Excel and zip exactly like handleDownload
     const doc = new jsPDF('p', 'pt', 'a4');
     let y = 40;
@@ -642,85 +693,42 @@ const handlePublish = async () => {
         extFolder.file(actualFile.name, actualFile);
       });
     };
-    addToZipByExtension(extras);
-    addToZipByExtension(models);
+    addToZipByExtension(approvedExtras);
+    addToZipByExtension(approvedModels);
 
     zip.file(`${zipName || 'Transmittal'}.pdf`, pdfBlob);
     zip.file(`${zipName || 'Transmittal'}.xlsx`, excelBlob);
 
+    console.log('Generating ZIP file...');
     const content = await zip.generateAsync({ type: "blob" });
-
-    // determine clientId (from /api/users/me) if possible
-    let clientId = null;
-    try {
-      const ures = await fetch('/api/users/me');
-      if (ures.ok) {
-        const udata = await ures.json();
-        clientId = udata.clientId || udata.client?.id || null;
-      }
-    } catch (e) {
-      console.warn('Could not fetch user before publish', e?.message || e);
-    }
-
-    // Determine numeric projectId: projectNo may be a numeric id or a project code.
-    // Try to resolve to the DB id by querying /api/projects if needed.
-    let projectIdToSend = null;
-    try {
-      // If projectNo looks numeric, use it as id
-      if (projectNo && !isNaN(Number(projectNo))) {
-        projectIdToSend = Number(projectNo);
-      } else if (projectNo) {
-        // try to fetch projects and find matching projectNo or projectName
-        const pres = await fetch('/api/projects');
-        if (pres.ok) {
-          const pj = await pres.json();
-          const found = (pj || []).find(p => String(p.projectNo) === String(projectNo) || String(p.id) === String(projectNo) || String(p.name) === String(projectNo) || String(p.projectName) === String(projectNo));
-          if (found) projectIdToSend = found.id;
-        }
-      }
-    } catch (e) {
-      console.warn('Could not resolve projectId before publish', e?.message || e);
-    }
-
-    // If we still don't have clientId, try to resolve it from the project record
-    if (!clientId && projectIdToSend) {
-      try {
-        const pres = await fetch('/api/projects');
-        if (pres.ok) {
-          const pj = await pres.json();
-          const found = (pj || []).find(p => Number(p.id) === Number(projectIdToSend));
-          if (found) {
-            clientId = found.clientId || found.client?.id || found.ownerId || null;
-          }
-        }
-      } catch (e) {
-        console.warn('Could not resolve client from project before publish', e?.message || e);
-      }
-    }
-
-    // debug: show what will be sent
-    try {
-      console.debug('Publishing transmittal with', { projectNo, projectIdToSend, clientId });
-    } catch (e) {}
-
+    console.log('ZIP file generated, size:', content.size);
 
     // Upload ZIP directly to GCS with progress, then log JSON automatically
     const zipFile = new File([content], `${zipName || 'Transmittal'}.zip`, { type: 'application/zip' });
 
-    setIsPublishing(true);
+    console.log('Starting upload to GCS...');
     const res = await uploadToGCSDirect(zipFile, {
-      clientId: clientId ?? undefined,
-      projectId: projectIdToSend ?? undefined,
+      clientId: Number(clientId),
+      projectId: Number(projectIdToSend),
       onProgress: setUploadProgress,
     });
 
-    setIsPublishing(false);
+    console.log('Upload successful:', res);
     setPublishResult({ success: true, data: res });
     setShowPublishModal(true);
 
   } catch (e) {
-    console.error('Publish failed', e);
-    setPublishResult({ success: false, error: e?.message || String(e) });
+    console.error('Publish failed:', e);
+    
+    // More specific error handling
+    let errorMessage = e?.message || String(e);
+    if (e?.message?.includes('NetworkError')) {
+      errorMessage = 'Network connection failed. Please check your internet connection and try again.';
+    } else if (e?.message?.includes('fetch')) {
+      errorMessage = 'Failed to connect to server. Please ensure the development server is running.';
+    }
+    
+    setPublishResult({ success: false, error: errorMessage });
     setShowPublishModal(true);
   }
   finally {

@@ -40,6 +40,7 @@ export const authOptions = {
   pages: {
     signIn: "/", // your custom login page
   },
+  debug: process.env.NODE_ENV === 'development',
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
@@ -47,6 +48,7 @@ export const authOptions = {
         token.email = user.email;
         token.userType = user.userType || token.userType;
         token.name = user.name || token.name;
+        token.clientId = user.clientId || token.clientId;
         return token;
       }
 
@@ -57,9 +59,11 @@ export const authOptions = {
           if (dbUser) {
             token.userType = dbUser.userType || token.userType;
             token.name = dbUser.name || token.name;
+            token.clientId = dbUser.clientId || token.clientId;
           }
         }
       } catch (e) {
+        console.warn('NextAuth JWT callback error:', e.message);
         // ignore DB errors and return token as-is
       }
 
@@ -72,6 +76,7 @@ export const authOptions = {
           email: token.email,
           userType: token.userType || null,
           name: token.name || null,
+          clientId: token.clientId || null,
         };
       }
       return session;

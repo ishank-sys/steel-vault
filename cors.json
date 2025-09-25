@@ -1,7 +1,7 @@
 [
   {
-    "origin": ["http://localhost:3000", "https://steel-vault.vercel.app"],
-    "method": ["PUT", "POST", "GET", "HEAD"],
+    "origin": ["http://localhost:3000", "http://localhost:3001", "https://steel-vault.vercel.app"],
+    "method": ["PUT", "POST", "GET", "HEAD", "OPTIONS"],
     "responseHeader": [
       "Content-Type",
       "Content-Length",
