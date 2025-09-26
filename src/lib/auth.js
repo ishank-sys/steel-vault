@@ -3,6 +3,24 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import { prisma } from "@/lib/prisma.js";
 import bcrypt from "bcryptjs";
 
+const ensureNextAuthUrl = () => {
+  if (process.env.NEXTAUTH_URL) return process.env.NEXTAUTH_URL;
+
+  const deployedHost = process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL;
+  const fallback = deployedHost
+    ? deployedHost.startsWith("http")
+      ? deployedHost
+      : `https://${deployedHost}`
+    : process.env.NODE_ENV === "development"
+      ? "http://localhost:3001"
+      : "http://localhost:3000";
+
+  process.env.NEXTAUTH_URL = fallback;
+  return fallback;
+};
+
+ensureNextAuthUrl();
+
 export const authOptions = {
   providers: [
     CredentialsProvider({
@@ -12,6 +30,10 @@ export const authOptions = {
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
+        console.info('[auth] Credentials authorize called', {
+          email: credentials?.email || null,
+          hasPassword: Boolean(credentials?.password),
+        });
         if (!credentials?.email || !credentials?.password) {
           throw new Error("Missing email or password");
         }
@@ -20,10 +42,22 @@ export const authOptions = {
           where: { email: credentials.email },
         });
 
-        if (!user) throw new Error("No user found with this email");
+        if (!user) {
+          console.warn('[auth] No user found for email', credentials.email);
+          throw new Error("No user found with this email");
+        }
 
         const isValid = await bcrypt.compare(credentials.password, user.password);
-        if (!isValid) throw new Error("Invalid password");
+        if (!isValid) {
+          console.warn('[auth] Invalid password for email', credentials.email);
+          throw new Error("Invalid password");
+        }
+
+        console.info('[auth] Credentials authorize succeeded', {
+          email: credentials.email,
+          userId: user.id,
+          userType: user.userType,
+        });
 
         // include userType and name so callbacks can place them in the session
         return {
