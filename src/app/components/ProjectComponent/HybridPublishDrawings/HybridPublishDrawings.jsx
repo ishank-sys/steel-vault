@@ -19,11 +19,6 @@ const HybridPublishDrawings = () => {
 
 
 const handleNextClick = () => {
-  if (selectedRows.size === 0) {
-    alert("Please select at least one row before proceeding.");
-    return;
-  }
-
   const selected = Array.from(selectedRows).map((idx) => {
     const row = mappedDrawings[idx];
     return {
