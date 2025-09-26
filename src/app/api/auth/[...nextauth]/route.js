@@ -1,3 +1,4 @@
+export const runtime = 'nodejs'; // force Node runtime (not edge) for Prisma
 import NextAuth from "next-auth";
 import { authOptions } from "@/lib/auth";
 
