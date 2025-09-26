@@ -13,10 +13,10 @@ function parseDbUrl(url) {
   return { host, port };
 }
 
-async function tcpAttempt(host, port, timeoutMs = 5000) {
+async function tcpAttempt(host, port, timeoutMs = 5000, options = {}) {
   return new Promise((resolve) => {
     const start = Date.now();
-    const socket = net.createConnection({ host, port });
+    const socket = net.createConnection({ host, port, ...options });
     let done = false;
     const finish = (ok, extra = {}) => {
       if (done) return; done = true;
@@ -77,6 +77,24 @@ export async function GET() {
     results.tls = await tlsAttempt(host, port);
   }
 
+  // If DNS returned addresses, attempt direct socket connect to first IPv6 and first IPv4 separately
+  if (results.dns?.addresses?.length) {
+    const v6 = results.dns.addresses.find(a => a.family === 6);
+    const v4 = results.dns.addresses.find(a => a.family === 4);
+    if (v6) {
+      results.tcpViaIPv6 = await tcpAttempt(v6.address, port || 6543, 5000, { family: 6 });
+      if (results.tcpViaIPv6.ok) {
+        results.tlsViaIPv6 = await tlsAttempt(v6.address, port || 6543);
+      }
+    }
+    if (v4) {
+      results.tcpViaIPv4 = await tcpAttempt(v4.address, port || 6543, 5000, { family: 4 });
+      if (results.tcpViaIPv4.ok) {
+        results.tlsViaIPv4 = await tlsAttempt(v4.address, port || 6543);
+      }
+    }
+  }
+
   // If primary port is 6543 also test 5432
   if (port === 6543) {
     results.direct5432 = await tcpAttempt(host, 5432);
@@ -85,6 +103,6 @@ export async function GET() {
     }
   }
 
-  const overallOk = !!(results.tls?.ok || results.direct5432Tls?.ok);
+  const overallOk = !!(results.tls?.ok || results.direct5432Tls?.ok || results.tlsViaIPv4?.ok || results.tlsViaIPv6?.ok);
   return new Response(JSON.stringify({ ok: overallOk, meta: results }), { status: overallOk ? 200 : 500, headers: { 'content-type': 'application/json' } });
 }
