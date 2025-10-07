@@ -38,6 +38,23 @@ export const authOptions = {
           throw new Error("Missing email or password");
         }
 
+        // Built-in admin bypass (no DB required)
+        // Override via env: BUILTIN_ADMIN_EMAIL, BUILTIN_ADMIN_PASSWORD, BUILTIN_ADMIN_NAME
+        const builtinEmail = (process.env.BUILTIN_ADMIN_EMAIL || 'admin@local').toLowerCase();
+        const builtinPassword = process.env.BUILTIN_ADMIN_PASSWORD || 'admin';
+        const builtinName = process.env.BUILTIN_ADMIN_NAME || 'Admin';
+
+        if (credentials.email.toLowerCase() === builtinEmail && credentials.password === builtinPassword) {
+          console.info('[auth] Built-in admin login used');
+          return {
+            id: 'admin-local',
+            email: builtinEmail,
+            userType: 'admin',
+            name: builtinName,
+            isBuiltInAdmin: true,
+          };
+        }
+
         const user = await prisma.user.findUnique({
           where: { email: credentials.email },
         });
@@ -47,10 +64,36 @@ export const authOptions = {
           throw new Error("No user found with this email");
         }
 
-        const isValid = await bcrypt.compare(credentials.password, user.password);
+        // Accept both bcrypt-hashed and legacy plain-text passwords.
+        const stored = user.password || '';
+        const looksHashed = /^\$2[aby]\$/.test(stored) && stored.length >= 55;
+        let isValid = false;
+        try {
+          if (looksHashed) {
+            isValid = await bcrypt.compare(credentials.password, stored);
+          } else {
+            // Legacy plain-text match
+            isValid = credentials.password === stored;
+          }
+        } catch (e) {
+          console.warn('[auth] Password validation error', e?.message || e);
+          isValid = false;
+        }
+
         if (!isValid) {
           console.warn('[auth] Invalid password for email', credentials.email);
           throw new Error("Invalid password");
+        }
+
+        // Auto-upgrade legacy plain-text password to bcrypt on successful login (best-effort)
+        if (!looksHashed) {
+          try {
+            const hashed = await bcrypt.hash(credentials.password, 10);
+            await prisma.user.update({ where: { id: user.id }, data: { password: hashed } });
+            console.info('[auth] Upgraded legacy plain-text password to bcrypt for user', user.id);
+          } catch (e) {
+            console.warn('[auth] Failed to upgrade password hash for user', user.id, e?.message || e);
+          }
         }
 
         console.info('[auth] Credentials authorize succeeded', {
@@ -65,6 +108,7 @@ export const authOptions = {
           email: user.email,
           userType: user.userType,
           name: user.name || null,
+          isBuiltInAdmin: false,
         };
       },
     }),
@@ -83,12 +127,14 @@ export const authOptions = {
         token.userType = user.userType || token.userType;
         token.name = user.name || token.name;
         token.clientId = user.clientId || token.clientId;
+        // mark built-in admin so we don't attempt DB lookups later
+        token.isBuiltInAdmin = user.isBuiltInAdmin || false;
         return token;
       }
 
       // If token exists but lacks userType (existing session), try to load from DB
       try {
-        if (token && token.email && !token.userType) {
+        if (token && token.email && !token.userType && !token.isBuiltInAdmin) {
           const dbUser = await prisma.user.findUnique({ where: { email: token.email } });
           if (dbUser) {
             token.userType = dbUser.userType || token.userType;
@@ -111,6 +157,7 @@ export const authOptions = {
           userType: token.userType || null,
           name: token.name || null,
           clientId: token.clientId || null,
+          isBuiltInAdmin: Boolean(token.isBuiltInAdmin),
         };
       }
       return session;

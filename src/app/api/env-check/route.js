@@ -25,6 +25,7 @@ export async function GET() {
   const db = process.env.DATABASE_URL || '';
   const pooled = /pgbouncer=true/.test(db);
   const portMatch = db.match(/:(\d+)\//);
+  const ipv6Only = !!process.env.SV_DB_IPV6_ONLY; // optional manual flag
 
   return new Response(
     JSON.stringify({
@@ -36,6 +37,7 @@ export async function GET() {
         pooled,
         port: portMatch ? portMatch[1] : null,
         hasSslMode: /sslmode=/.test(db),
+        ipv6OnlyHint: ipv6Only
       }
     }),
     { status: 200, headers: { 'content-type': 'application/json' } }

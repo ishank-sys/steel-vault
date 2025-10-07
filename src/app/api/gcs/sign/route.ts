@@ -27,7 +27,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "GCS_BUCKET not configured" }, { status: 500 });
     }
 
-    const { filename, contentType, clientId, projectId } = await req.json();
+  const { filename, contentType, clientId, projectId, packageId, packageName } = await req.json();
     if (!filename) {
       return NextResponse.json({ error: "filename is required" }, { status: 400 });
     }
@@ -66,9 +66,35 @@ export async function POST(req: Request) {
       }
     }
 
+    // Optional package folder (resolve from DB if only id is given)
+    let packageFolder = '';
+    if (packageId || packageName) {
+      let pkgLabel = packageName ? slugify(String(packageName)) : '';
+      if (!pkgLabel && packageId) {
+        try {
+          const rows: any[] = await prisma.$queryRawUnsafe(
+            `SELECT name, packagenumber, projectid FROM "public"."ProjectPackage" WHERE id = $1 LIMIT 1`,
+            Number(packageId)
+          );
+          if (rows && rows.length) {
+            const row = rows[0];
+            // Optional: ensure package belongs to projectId if provided
+            if (!projectId || Number(row.projectid) === Number(projectId)) {
+              const base = row.packagenumber || row.name || `package-${packageId}`;
+              pkgLabel = slugify(String(base));
+            }
+          }
+        } catch (e) {
+          // fallback below
+        }
+      }
+      if (!pkgLabel && packageId) pkgLabel = `package-${packageId}`;
+      if (pkgLabel) packageFolder = `packages/${pkgLabel}`;
+    }
+
     const destName = `${Date.now()}_${filename}`;
     // Collapse any double slashes and trim trailing slash
-    const destinationPath = `${clientFolder}/${projectFolder}/${destName}`
+    const destinationPath = `${clientFolder}/${projectFolder}/${packageFolder}/${destName}`
       .replace(/\/+/g, "/")
       .replace(/\/$/, "");
 

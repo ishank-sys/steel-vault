@@ -8,7 +8,10 @@
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "next lint",
-    "seed": "npx prisma db seed --preview-feature"
+    "seed": "prisma db seed"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
   },
   "resolutions": {
     "lightningcss": "1.21.0"

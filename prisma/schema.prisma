@@ -30,6 +30,7 @@ model Client {
   documentLogs          DocumentLog[]
   projects              Project[]     @relation("ClientProjects")
   users                 User[]        @relation("ClientUsers")
+  projectDrawings       ProjectDrawing[]
 }
 
 model User {
@@ -73,10 +74,15 @@ model Project {
   solJobNo                String?
   projectType             String?
   projectSubType          String?
+  // Added to align with seed script usage
+  projectDataFolder       String?
+  jobName                 String?
+  estimationRows          Json           @default("[]")
   lastUpdated             DateTime      @updatedAt @default(now())
   lastActivityDate        DateTime?
   createdAt               DateTime      @default(now())
   documentLogs            DocumentLog[]
+  projectDrawings         ProjectDrawing[]
   client                  Client        @relation("ClientProjects", fields: [clientId], references: [id])
   solTL                   User?         @relation("UserSolTL", fields: [solTLId], references: [id])
 }
@@ -92,4 +98,26 @@ model DocumentLog {
   logType     String?
   client      Client   @relation(fields: [clientId], references: [id])
   project     Project  @relation(fields: [projectId], references: [id])
+}
+
+// Stores the latest state of a project's drawing by DrgNo and optional category.
+// Intended to be upserted on publish so UI can show current revision and attachment name.
+model ProjectDrawing {
+  id             Int       @id @default(autoincrement())
+  clientId       Int
+  projectId      Int
+  drgNo          String
+  item           String?
+  category       String?   // A/G/W etc.
+  revision       String?
+  fileName       String?   // last attached file name (local label)
+  lastAttachedAt DateTime? // when it was last included in a publish
+  meta           Json?     // optional details (detailer/checker/sheetSize)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  client         Client    @relation(fields: [clientId], references: [id])
+  project        Project   @relation(fields: [projectId], references: [id])
+
+  @@unique([projectId, drgNo, category])
 }

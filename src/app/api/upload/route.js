@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "@/lib/prisma.js";
 
 export const runtime = 'nodejs';
-
-const prisma = new PrismaClient();
+export const dynamic = 'force-dynamic';
 
 const toIntOrNull = (v) => {
   const n = typeof v === "string" ? parseInt(v, 10) : Number(v);
@@ -34,35 +33,39 @@ export async function POST(req) {
     const cleanClientId = typeof clientId === "string" ? parseInt(clientId, 10) : Number(clientId);
     const cleanProjectId = typeof projectId === "string" ? parseInt(projectId, 10) : Number(projectId);
 
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[upload] payload', { clientId, projectId, cleanClientId, cleanProjectId, originalName, storagePath, size, logType });
+    }
+
     // Enforce non-null clientId/projectId per schema requirements
     if (!Number.isFinite(cleanClientId) || !Number.isFinite(cleanProjectId)) {
       return NextResponse.json({ error: "clientId and projectId are required and must be numeric" }, { status: 400 });
     }
 
     // Verify that clientId exists in the Client table before creating DocumentLog
+    let clientVerifyWarning = null;
     try {
-      const clientExists = await prisma.client.findUnique({
-        where: { id: cleanClientId }
-      });
+      const clientExists = await prisma.client.findUnique({ where: { id: cleanClientId } });
       if (!clientExists) {
         return NextResponse.json({ error: `Client with ID ${cleanClientId} does not exist` }, { status: 400 });
       }
     } catch (e) {
-      console.error("Failed to verify client existence:", e);
-      return NextResponse.json({ error: "Failed to verify client" }, { status: 500 });
+      const msg = e?.message || String(e);
+      clientVerifyWarning = msg;
+      console.warn("/api/upload: warning, DB error verifying client existence (will continue):", msg);
     }
 
     // Verify that projectId exists in the Project table
+    let projectVerifyWarning = null;
     try {
-      const projectExists = await prisma.project.findUnique({
-        where: { id: cleanProjectId }
-      });
+      const projectExists = await prisma.project.findUnique({ where: { id: cleanProjectId } });
       if (!projectExists) {
         return NextResponse.json({ error: `Project with ID ${cleanProjectId} does not exist` }, { status: 400 });
       }
     } catch (e) {
-      console.error("Failed to verify project existence:", e);
-      return NextResponse.json({ error: "Failed to verify project" }, { status: 500 });
+      const msg = e?.message || String(e);
+      projectVerifyWarning = msg;
+      console.warn("/api/upload: warning, DB error verifying project existence (will continue):", msg);
     }
 
     // Strip any gs://bucket/ prefix from storagePath when logging in DocumentLog
@@ -74,16 +77,26 @@ export async function POST(req) {
     const INT_MAX = 2147483647;
     if (normSize > INT_MAX) normSize = INT_MAX;
 
-    const record = await prisma.documentLog.create({
-      data: {
-        fileName: originalName,
-        clientId: cleanClientId,
-        projectId: cleanProjectId,
-        storagePath: normalizedPath,
-        size: normSize,
-        logType: logType || "EMPLOYEE_UPLOAD",
-      },
-    });
+    let record;
+    try {
+      record = await prisma.documentLog.create({
+        data: {
+          fileName: originalName,
+          clientId: cleanClientId,
+          projectId: cleanProjectId,
+          storagePath: normalizedPath,
+          size: normSize,
+          logType: logType || "EMPLOYEE_UPLOAD",
+        },
+      });
+    } catch (e) {
+      const msg = e?.message || String(e);
+      console.error("/api/upload: failed to create DocumentLog:", msg);
+      const extra = [];
+      if (clientVerifyWarning) extra.push(`clientVerifyWarning=${clientVerifyWarning}`);
+      if (projectVerifyWarning) extra.push(`projectVerifyWarning=${projectVerifyWarning}`);
+      return NextResponse.json({ error: process.env.NODE_ENV !== 'production' ? `Failed to log upload: ${msg}${extra.length ? ' | ' + extra.join(' | ') : ''}` : 'Failed to log upload' }, { status: 500 });
+    }
 
     // Optional: maintain separate upload table if present
     try {

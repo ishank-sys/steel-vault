@@ -29,19 +29,25 @@ const ViewProjectEstimation = () => {
   return (
     <div className="p-6">
       <SearchFilter
-        data={projects}
-        searchFields={[
-          'projectName', 'clientName', 'estimatedBy', 'projectStatus', 'projectNo', 'projectType'
-        ]}
+        data={projects.map(p => ({
+          // Normalize for the generic table/search components
+          projectName: p.name,
+            clientName: p.client?.name || '-',
+            status: p.status,
+            projectNo: p.projectNo,
+            projectType: p.projectType,
+            solTL: p.solTL?.name || '-',
+        }))}
+        searchFields={['projectName', 'clientName', 'status', 'projectNo', 'projectType', 'solTL']}
         onFilteredDataChange={setFilteredData}
       />
 
       <TableComponent
         headers={[
-          'Project Name', 'Client', 'Estimated By', 'Project Status', 'Project No', 'Project Type', 'Assign TL'
+          'Project Name', 'Client', 'Status', 'Project No', 'Project Type', 'Team Lead', 'Assign TL'
         ]}
         keys={[
-          'projectName', 'clientName', 'estimatedBy', 'projectStatus', 'projectNo', 'projectType', 'assigntl'
+          'projectName', 'clientName', 'status', 'projectNo', 'projectType', 'solTL', 'assigntl'
         ]}
         data={filteredData}
         showActions={true}

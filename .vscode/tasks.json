@@ -13,6 +13,39 @@
 				"$eslint-stylish"
 			],
 			"group": "build"
+		},
+		{
+			"label": "Prisma migrate dev (ProjectDrawing)",
+			"type": "shell",
+			"command": "npx",
+			"args": [
+				"prisma",
+				"migrate",
+				"dev",
+				"--name",
+				"add_project_drawing"
+			]
+		},
+		{
+			"label": "Prisma migrate dev (ProjectDrawing) retry",
+			"type": "shell",
+			"command": "npx",
+			"args": [
+				"prisma",
+				"migrate",
+				"dev",
+				"--name",
+				"add_project_drawing"
+			]
+		},
+		{
+			"label": "Prisma generate after schema change",
+			"type": "shell",
+			"command": "npx",
+			"args": [
+				"prisma",
+				"generate"
+			]
 		}
 	]
 }

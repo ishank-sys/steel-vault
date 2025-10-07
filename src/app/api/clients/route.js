@@ -1,15 +1,53 @@
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "@/lib/prisma.js";
 import { getGCSStorage } from "@/lib/gcs";
 
-const prisma = new PrismaClient();
+export const runtime = 'nodejs';
 const GCS_BUCKET = process.env.GCS_BUCKET;
 
 export async function GET(req) {
   try {
-    // Fetch all clients
+    // Fetch all clients first
     const clients = await prisma.client.findMany();
-    return NextResponse.json(clients);
+    if (clients.length === 0) return NextResponse.json([]);
+
+    const clientIds = clients.map(c => c.id);
+    // Group project counts by client & status
+    const grouped = await prisma.project.groupBy({
+      by: ['clientId', 'status'],
+      where: { clientId: { in: clientIds } },
+      _count: { _all: true }
+    });
+
+    // Aggregate counts
+    const ACTIVE_STATUSES = new Set(['Live', 'PLANNING', 'IN_PROGRESS']); // treat legacy 'Live' & new statuses as active
+    const COMPLETED_STATUSES = new Set(['COMPLETED']);
+
+    const statsMap = new Map();
+    for (const row of grouped) {
+      const key = row.clientId;
+      const status = row.status || 'UNKNOWN';
+      const count = row._count._all;
+      const bucket = statsMap.get(key) || { total: 0, active: 0, completed: 0 };
+      bucket.total += count;
+      if (ACTIVE_STATUSES.has(status)) bucket.active += count;
+      if (COMPLETED_STATUSES.has(status)) bucket.completed += count;
+      statsMap.set(key, bucket);
+    }
+
+    // Merge into response (do NOT persist every request to avoid churn)
+    const enriched = clients.map(c => {
+      const s = statsMap.get(c.id) || { total: 0, active: 0, completed: 0 };
+      return {
+        ...c,
+        // Expose live computed stats alongside stored values for transparency
+        computedTotalProjects: s.total,
+        computedActiveProjects: s.active,
+        computedCompletedProjects: s.completed,
+      };
+    });
+
+    return NextResponse.json(enriched);
   } catch (err) {
     console.error("❌ API error:", err);
     return NextResponse.json({ error: err.message }, { status: 500 });

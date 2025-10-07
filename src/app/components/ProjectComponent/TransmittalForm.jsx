@@ -13,7 +13,7 @@ import { useRouter } from 'next/navigation';
 
 const TransmittalForm = () => {
   // Zustand store
-  const { selectedDrawings, approvedDrawings, drawings: storeDrawings, approvedExtras, approvedModels, projectName, projectNo, selectedClientId } = useDrawingStore();
+  const { selectedDrawings, approvedDrawings, drawings: storeDrawings, approvedExtras, approvedModels, projectName, projectNo, selectedClientId, selectedProjectId, selectedPackageId, selectedPackageName } = useDrawingStore();
 
     const router = useRouter();
   
@@ -364,79 +364,22 @@ const handleDownload = async () => {
   doc.setFontSize(16);
   doc.text('LETTER OF TRANSMITTAL', 350, y + 10);
 
+  // Minimal header content for PDF (reuse small subset)
   y += 80;
   const todayDate = new Date();
   const formattedDate = `${String(todayDate.getMonth() + 1).padStart(2, '0')}-${String(todayDate.getDate()).padStart(2, '0')}-${todayDate.getFullYear()}`;
-
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
-
-  doc.text(`TO: ${fabricatorName}`, 40, y);
-  doc.text(`ATTN: ${fabricatorCoordinator}`, 40, y + 15);
   doc.text(`PROJECT NAME: ${projectName}`, 40, y + 30);
-
   doc.text(`DATE: ${formattedDate}`, 350, y);
-  doc.text(`TRANSMITTAL NO: 002`, 350, y + 15);
-  doc.text(`FABRICATOR JOB NO: ${fabricatorJobNo}`, 350, y + 30);
-  doc.text(`ISSUED BY: ${solTeamLeader}`, 350, y + 45);
-  doc.text(`SEQUENCE NO:`, 350, y + 60);
-  doc.text(`SOL JOB NO: ${solJobNo}`, 350, y + 75);
 
-  y += 100;
-  doc.setFontSize(10);
-  doc.text('WE ARE SENDING YOU:', 40, y);
-  y += 15;
-  doc.text('Drg Qty.', 60, y);
-  doc.text('Drg Qty.', 370, y);
-  y += 15;
-
-  doc.text(`[${newItemForApprovalQty > 0 ? 'X' : ' '}]`, 40, y);
-  doc.text(`${newItemForApprovalQty}`, 60, y);
-  doc.text('NEW ITEM FOR APPROVAL', 90, y);
-  y += 15;
-  doc.text(`[${newItemForFabFieldQty > 0 ? 'X' : ' '}]`, 40, y);
-  doc.text(`${newItemForFabFieldQty}`, 60, y);
-  doc.text('NEW ITEM FOR FAB/FIELD', 90, y);
-  y += 15;
-  doc.text(`[${deletedItemQty > 0 ? 'X' : ' '}]`, 40, y);
-  doc.text(`${deletedItemQty}`, 60, y);
-  doc.text('DELETED ITEM', 90, y);
-
-  y -= 30;
-  doc.text(`[${revisedItemForApprovalQty > 0 ? 'X' : ' '}]`, 350, y);
-  doc.text(`${revisedItemForApprovalQty}`, 370, y);
-  doc.text('REVISED ITEM FOR APPROVAL', 400, y);
-  y += 15;
-  doc.text(`[${revisedItemForFabFieldQty > 0 ? 'X' : ' '}]`, 350, y);
-  doc.text(`${revisedItemForFabFieldQty}`, 370, y);
-  doc.text('REVISED ITEM FOR FAB/FIELD', 400, y);
-  y += 15;
-  doc.text('Total', 350, y);
-  doc.text(`${totalQty}`, 400, y);
-
-  y += 40;
-  const remarkRectX = 35;
-  const remarkRectY = y;
-  const remarkRectWidth = 520;
-  const remarkTitleHeight = 20;
-  const remarkContentHeight = 30;
-
-  doc.setDrawColor(0);
-  doc.rect(remarkRectX, remarkRectY, remarkRectWidth, remarkTitleHeight + remarkContentHeight);
-  doc.line(remarkRectX, remarkRectY + remarkTitleHeight, remarkRectX + remarkRectWidth, remarkRectY + remarkTitleHeight);
-
-  doc.setFontSize(12);
-  doc.setFont('helvetica', 'bold');
-  doc.text('TRANSMITTAL REMARK', remarkRectX + (remarkRectWidth / 2), remarkRectY + (remarkTitleHeight / 2) + 4, { align: 'center' });
-
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
-  doc.text(zipName, remarkRectX + 5, remarkRectY + remarkTitleHeight + (remarkContentHeight / 2) + 3);
-
-  y = remarkRectY + remarkTitleHeight + remarkContentHeight;
-  y += 20;
-
-  const grouped = {};
+  // Table generation (same grouping logic)
+  let grouped = {};
+  const tableDrawings = selectedDrawings.map((d, i) => ({
+    drawingNo: d.drawingNo || d.drgNo || '-',
+    desc: d.itemName || d.item || '-',
+    void: d.void || false,
+  }));
   tableDrawings.forEach(item => {
     const desc = item.void ? `${item.desc} [VOID]` : item.desc;
     if (!grouped[desc]) grouped[desc] = [];
@@ -452,7 +395,7 @@ const handleDownload = async () => {
   ]);
 
   autoTable(doc, {
-    startY: y,
+    startY: y + 60,
     head: pdfTableHeaders,
     body: pdfTableData,
     styles: { fontSize: 10, cellPadding: 4 },
@@ -520,7 +463,6 @@ const handleDownload = async () => {
       });
     }
   });
-
   const addToZipByExtension = (filesArray) => {
     if (!filesArray || !filesArray.length) return;
     filesArray.forEach((file) => {
@@ -534,7 +476,6 @@ const handleDownload = async () => {
   addToZipByExtension(approvedExtras);
   addToZipByExtension(approvedModels);
 
-  // Add PDF + Excel into root of ZIP
   zip.file(`${zipName || 'Transmittal'}.pdf`, pdfBlob);
   zip.file(`${zipName || 'Transmittal'}.xlsx`, excelBlob);
 
@@ -543,7 +484,7 @@ const handleDownload = async () => {
   saveAs(content, `${zipName || 'Drawing'}.zip`);
 };
 
-// Publish: upload the same ZIP to /api/upload and rely on server to log EMPLOYEE_UPLOAD
+// Publish: upsert to DB and upload the ZIP to storage
 const handlePublish = async () => {
   const zipName = zipNameRef.current?.value || '';
 
@@ -551,56 +492,98 @@ const handlePublish = async () => {
     setUploadProgress(0);
     setIsPublishing(true);
 
-    console.log('Starting publish process...');
-
     // Validate required data before creating files
     let clientId = selectedClientId;
-    console.log('Using selectedClientId from store:', clientId);
-
     if (!clientId || !Number.isFinite(Number(clientId))) {
       throw new Error('Please select a client in the PublishDrawing page before publishing.');
     }
 
-    // Determine numeric projectId: projectNo is the project number, we need to find the actual database ID
+    // Determine numeric projectId
     let projectIdToSend = null;
     try {
-      console.log('Resolving project ID for projectNo:', projectNo);
-      const pres = await fetch('/api/projects', {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' }
-      });
+      const pres = await fetch('/api/projects', { method: 'GET', headers: { 'Content-Type': 'application/json' } });
       if (pres.ok) {
         const pj = await pres.json();
-        console.log('Available projects:', pj?.map(p => ({ id: p.id, projectNo: p.projectNo, name: p.name })));
-        
-        // Search by projectNo field first (most likely match), then fallback to other fields
-        const found = (pj || []).find(p => 
-          String(p.projectNo) === String(projectNo) || 
-          String(p.name) === String(projectNo) || 
+        const found = (pj || []).find(p =>
+          String(p.projectNo) === String(projectNo) ||
+          String(p.name) === String(projectNo) ||
           String(p.projectName) === String(projectNo) ||
           String(p.id) === String(projectNo)
         );
-        
-        if (found) {
-          projectIdToSend = found.id;
-          console.log('Found project:', { id: found.id, projectNo: found.projectNo, name: found.name });
-        } else {
-          console.error('No project found matching:', projectNo);
-        }
-      } else {
-        console.error('Failed to fetch projects:', pres.status, pres.statusText);
+        if (found) projectIdToSend = found.id;
       }
-    } catch (e) {
-      console.warn('Could not resolve projectId before publish', e?.message || e);
-    }
+    } catch {}
 
     if (!projectIdToSend || !Number.isFinite(Number(projectIdToSend))) {
-      throw new Error(`Unable to determine project ID from "${projectNo}". Please ensure the project exists and is accessible.`);
+      throw new Error(`Unable to determine project ID from "${projectNo}".`);
     }
 
-    console.log('Publishing with IDs:', { clientId: Number(clientId), projectId: Number(projectIdToSend) });
+    // Confirm project & package before proceeding
+    const pkgDisplay = selectedPackageName || (selectedPackageId != null ? `#${selectedPackageId}` : 'None');
+    const confirmed = window.confirm(`Confirm publish to:\n- Project: ${projectName} (ID ${projectIdToSend})\n- Package: ${pkgDisplay}\n\nProceed?`);
+    if (!confirmed) { setIsPublishing(false); return; }
 
-    // Recreate the PDF and Excel and zip exactly like handleDownload
+    // Normalizers
+    const normalizeToken = (s) => String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const stripFrTrSuffix = (token) => {
+      if (!token) return token;
+      const up = token.toUpperCase();
+      if (up.endsWith('FR') || up.endsWith('TR')) return up.slice(0, -2);
+      return up;
+    };
+    const normalizeCategory = (cat) => {
+      const c = String(cat || '').trim().toUpperCase();
+      if (!c) return '';
+      if (c === 'A' || c === 'G' || c === 'W') return c;
+      if (c.startsWith('SHOP') || c === 'S') return 'A';
+      if (c.startsWith('ERECTION') || c === 'E' || c === 'GA' || c.includes('GENERAL')) return 'G';
+      if (c.includes('PART') || c.includes('COMPONENT') || c === 'P') return 'W';
+      return c[0] || '';
+    };
+    const normalizeDrawingKey = (drgNo, cat) => {
+      const normDr = stripFrTrSuffix(normalizeToken(drgNo));
+      const normCat = normalizeCategory(cat);
+      return { normDr, normCat, key: `${normDr}::${normCat}` };
+    };
+
+    // Build entries for upsert (insert when new, update when exists)
+    const entriesToUpsert = (selectedDrawings || [])
+      .filter(d => Array.isArray(d.attachedPdfs) && d.attachedPdfs.length > 0)
+      .map(d => {
+        const drawingNumber = d.drawingNo || d.drgNo || d.drawingNo || '';
+        const category = normalizeCategory(d.category || '');
+        const { normDr } = normalizeDrawingKey(drawingNumber, category);
+        const drawingToSend = drawingNumber; // keep original; DB will upsert on (project, drawing, category)
+        return {
+          drawingNumber: drawingToSend,
+          category,
+          revision: d.rev || null,
+        };
+      })
+      .filter(e => e.drawingNumber);
+
+    if (entriesToUpsert.length > 0) {
+      const up = await fetch('/api/project-drawings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId: Number(clientId),
+          projectId: Number(projectIdToSend),
+          packageId: selectedPackageId != null ? Number(selectedPackageId) : undefined,
+          entries: entriesToUpsert,
+        })
+      });
+      const upJson = await up.json().catch(() => ({}));
+      if (!up.ok) {
+        console.warn('ProjectDrawing upsert failed', up.status, upJson);
+      } else {
+        console.log('ProjectDrawing upserts:', upJson);
+      }
+    } else {
+      console.log('No drawings with files selected to publish; skipping DB upsert.');
+    }
+
+    // Create PDF + Excel + ZIP (same as download) and upload
     const doc = new jsPDF('p', 'pt', 'a4');
     let y = 40;
     doc.setFontSize(14);
@@ -611,8 +594,6 @@ const handlePublish = async () => {
     doc.text('E:mail: mahesh_teli@sol-mail.net', 40, y + 45);
     doc.setFontSize(16);
     doc.text('LETTER OF TRANSMITTAL', 350, y + 10);
-
-    // Minimal header content for PDF (reuse small subset)
     y += 80;
     const todayDate = new Date();
     const formattedDate = `${String(todayDate.getMonth() + 1).padStart(2, '0')}-${String(todayDate.getDate()).padStart(2, '0')}-${todayDate.getFullYear()}`;
@@ -620,10 +601,8 @@ const handlePublish = async () => {
     doc.setFont('helvetica', 'normal');
     doc.text(`PROJECT NAME: ${projectName}`, 40, y + 30);
     doc.text(`DATE: ${formattedDate}`, 350, y);
-
-    // Table generation (same grouping logic)
     let grouped = {};
-    const tableDrawings = selectedDrawings.map((d, i) => ({
+    const tableDrawings = selectedDrawings.map((d) => ({
       drawingNo: d.drawingNo || d.drgNo || '-',
       desc: d.itemName || d.item || '-',
       void: d.void || false,
@@ -633,7 +612,6 @@ const handlePublish = async () => {
       if (!grouped[desc]) grouped[desc] = [];
       grouped[desc].push(item.drawingNo);
     });
-
     const pdfTableHeaders = [['REV. REMARK', 'SHEET TITLE', 'SHEET NAME', 'SHEET QTY']];
     const pdfTableData = Object.entries(grouped).map(([desc, drawingNos]) => [
       'ISSUED FOR APPROVAL',
@@ -641,38 +619,19 @@ const handlePublish = async () => {
       drawingNos.join(', '),
       drawingNos.length
     ]);
-
-    autoTable(doc, {
-      startY: y + 60,
-      head: pdfTableHeaders,
-      body: pdfTableData,
-      styles: { fontSize: 10, cellPadding: 4 },
-      headStyles: { fillColor: [0, 112, 192] },
-      theme: 'grid'
-    });
-
+    autoTable(doc, { startY: y + 60, head: pdfTableHeaders, body: pdfTableData, styles: { fontSize: 10, cellPadding: 4 }, headStyles: { fillColor: [0, 112, 192] }, theme: 'grid' });
     const pdfBlob = doc.output('blob');
 
-    // Excel
     const wb = XLSX.utils.book_new();
-    const headerSheetData = [
-      ["PROJECT NAME:", projectName],
-    ];
-    const tableSheetData = (selectedDrawings || []).map((d, i) => [
-      i + 1,
-      d.itemName || d.item || '-',
-      d.drawingNo || d.drgNo || '-',
-      d.rev || '',
-    ]);
+    const headerSheetData = [["PROJECT NAME:", projectName]];
+    const tableSheetData = (selectedDrawings || []).map((d, i) => [i + 1, d.itemName || d.item || '-', d.drawingNo || d.drgNo || '-', d.rev || '']);
     const finalSheetData = [...headerSheetData, ...tableSheetData];
     const ws = XLSX.utils.aoa_to_sheet(finalSheetData);
     XLSX.utils.book_append_sheet(wb, ws, "Transmittal");
     const excelBlob = new Blob([XLSX.write(wb, { bookType: "xlsx", type: "array" })], { type: "application/octet-stream" });
 
-    // ZIP
     const zip = new JSZip();
     const rootFolder = zip.folder("Drawing");
-
     (storeDrawings || []).forEach(d => {
       if (d.attachedPdfs && d.attachedPdfs.length) {
         const folderName = d.category || 'Other Drawings';
@@ -695,43 +654,32 @@ const handlePublish = async () => {
     };
     addToZipByExtension(approvedExtras);
     addToZipByExtension(approvedModels);
-
     zip.file(`${zipName || 'Transmittal'}.pdf`, pdfBlob);
     zip.file(`${zipName || 'Transmittal'}.xlsx`, excelBlob);
 
-    console.log('Generating ZIP file...');
     const content = await zip.generateAsync({ type: "blob" });
-    console.log('ZIP file generated, size:', content.size);
-
-    // Upload ZIP directly to GCS with progress, then log JSON automatically
     const zipFile = new File([content], `${zipName || 'Transmittal'}.zip`, { type: 'application/zip' });
-
-    console.log('Starting upload to GCS...');
     const res = await uploadToGCSDirect(zipFile, {
       clientId: Number(clientId),
       projectId: Number(projectIdToSend),
+      packageId: selectedPackageId || undefined,
+      packageName: selectedPackageName || undefined,
       onProgress: setUploadProgress,
     });
-
-    console.log('Upload successful:', res);
     setPublishResult({ success: true, data: res });
     setShowPublishModal(true);
 
   } catch (e) {
     console.error('Publish failed:', e);
-    
-    // More specific error handling
     let errorMessage = e?.message || String(e);
     if (e?.message?.includes('NetworkError')) {
       errorMessage = 'Network connection failed. Please check your internet connection and try again.';
     } else if (e?.message?.includes('fetch')) {
       errorMessage = 'Failed to connect to server. Please ensure the development server is running.';
     }
-    
     setPublishResult({ success: false, error: errorMessage });
     setShowPublishModal(true);
-  }
-  finally {
+  } finally {
     setIsPublishing(false);
   }
 };

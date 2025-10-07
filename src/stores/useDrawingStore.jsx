@@ -3,7 +3,10 @@ import { create } from 'zustand';
 const useDrawingStore = create((set) => ({
       projectName: '',
       projectNo: '',
+  selectedProjectId: null,
       selectedClientId: null,
+  selectedPackageId: null,
+  selectedPackageName: '',
       approvedDrawings: [],
       approvedExtras: [],
       approvedModels: [],
@@ -13,7 +16,9 @@ const useDrawingStore = create((set) => ({
       selectedDrawings: [], // ✅ keep selected rows here for void/unvoid
       
       setProjectDetails: (name, no) => set({ projectName: name, projectNo: no }),
+  setSelectedProjectId: (projectId) => set({ selectedProjectId: projectId }),
       setSelectedClientId: (clientId) => set({ selectedClientId: clientId }),
+  setSelectedPackage: (pkg) => set({ selectedPackageId: pkg?.id ?? null, selectedPackageName: pkg?.name ?? '' }),
       setApprovedDrawings: (drawings) => set({ approvedDrawings: drawings }),
       setApprovedExtras: (extras) => set({ approvedExtras: extras }),
       setApprovedModels: (models) => set({ approvedModels: models }),
