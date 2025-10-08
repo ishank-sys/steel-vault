@@ -1,8 +1,8 @@
 export async function uploadToGCSDirect(
   file: File,
-  opts?: { clientId?: number; projectId?: number; packageId?: number | string; packageName?: string; onProgress?: (pct: number) => void }
+  opts?: { clientId?: number; projectId?: number; packageId?: number | string; packageName?: string; onProgress?: (pct: number) => void; logType?: string }
 ) {
-  const { clientId, projectId, packageId, packageName, onProgress } = opts || {};
+  const { clientId, projectId, packageId, packageName, onProgress, logType } = opts || {};
   const debug = process.env.NEXT_PUBLIC_DEBUG_UPLOAD === '1';
   if (debug) console.log('[upload] start', { name: file.name, size: file.size, type: file.type, clientId, projectId });
 
@@ -100,7 +100,8 @@ export async function uploadToGCSDirect(
       originalName: file.name,
       storagePath: objectPath,
       size: file.size,
-  logType: "EMPLOYEE_UPLOAD",
+      // default to EMPLOYEE_UPLOAD unless explicitly overridden
+      logType: logType ?? "EMPLOYEE_UPLOAD",
     }),
   });
   if (!logRes.ok) {

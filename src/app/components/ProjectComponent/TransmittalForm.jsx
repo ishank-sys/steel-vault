@@ -861,25 +861,36 @@ const handlePublish = async () => {
         <label className="flex items-center gap-1"><input type="checkbox" /> Don't send mails</label>
       </div>
 
-      {/* Email + Remarks Section */}
+      {/* Email Section */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
-        <div>
+        <div className="md:col-span-1">
           <label className="text-sm">Recipients (comma/semicolon separated):</label>
-          <input value={toEmails} onChange={(e) => setToEmails(e.target.value)} className="w-full border p-2 rounded" placeholder="email1@example.com; email2@example.com" />
-          <label className="text-sm mt-2 block">Email Subject (optional):</label>
-          <input value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} className="w-full border p-2 rounded" placeholder="Subject" />
+          <input
+            value={toEmails}
+            onChange={(e) => setToEmails(e.target.value)}
+            className="w-full border p-2 rounded"
+            placeholder="email1@example.com; email2@example.com"
+          />
         </div>
-        <div>
-          <label className="text-sm">Subject:</label>
-          <textarea className="w-full border p-2 rounded" />
-        </div>
-        <div>
-          <label className="text-sm">Mail Text:</label>
-          <textarea className="w-full border p-2 rounded" />
-        </div>
-        <div>
-          <label className="text-sm">Transmittal Remark:</label>
-          <textarea className="w-full border p-2 rounded" />
+        <div className="md:col-span-2 grid grid-cols-1 gap-4">
+          <div>
+            <label className="text-sm">Subject</label>
+            <input
+              value={emailSubject}
+              onChange={(e) => setEmailSubject(e.target.value)}
+              className="w-full border p-2 rounded"
+              placeholder="Subject"
+            />
+          </div>
+          <div>
+            <label className="text-sm">Body</label>
+            <textarea
+              value={emailBody}
+              onChange={(e) => setEmailBody(e.target.value)}
+              className="w-full border p-2 rounded min-h-[120px]"
+              placeholder="Write your email message here..."
+            />
+          </div>
         </div>
       </div>
 

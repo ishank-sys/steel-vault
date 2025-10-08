@@ -7,8 +7,21 @@ const GCS_BUCKET = process.env.GCS_BUCKET;
 
 export async function GET(req) {
   try {
-    // Fetch all clients first
-    const clients = await prisma.client.findMany();
+    // Fetch clients selecting only columns that are guaranteed to exist in the current DB
+    // This avoids failures when the live DB is missing newer optional columns (e.g., companyName)
+    const clients = await prisma.client.findMany({
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        contactNo: true,
+        address: true,
+        dbUrl: true, // mapped to DB_URL
+        createdAt: true,
+        updatedAt: true,
+        // Note: omit companyName and other new fields to prevent column-not-found errors on older DBs
+      }
+    });
     if (clients.length === 0) return NextResponse.json([]);
 
     const clientIds = clients.map(c => c.id);

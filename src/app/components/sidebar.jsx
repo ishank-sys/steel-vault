@@ -116,6 +116,7 @@ export default function Sidebar({ initialUserType = null }) {
       {/* Admin Section */}
       {canShow('Admin') && (
         <CollapsibleGroup label="Admin" defaultOpen={defaultOpenFor('Admin')}>
+          <SidebarItem label="Admin Upload" href="/dashboard/admin/admin_upload" />
           <CollapsibleGroup label="User">
             <SidebarItem label="New User" href="/dashboard/admin/user/new_user" />
             <SidebarItem label="View User" href="/dashboard/admin/user/view_user" />

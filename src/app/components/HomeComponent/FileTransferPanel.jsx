@@ -4,7 +4,7 @@ import { uploadToGCSDirect } from '@/lib/uploadToGCS';
 import { useSession } from 'next-auth/react';
 import useSWR from 'swr';
 
-export default function FileTransferPanel() {
+export default function FileTransferPanel({ logType = undefined }) {
   const { data: session, status } = useSession();
   const [clients, setClients] = useState([]);
   const [users, setUsers] = useState([]);
@@ -38,6 +38,11 @@ export default function FileTransferPanel() {
     return (session && session.user && session.user.email) || '';
   }, [session, status]);
 
+  const selectedClient = useMemo(() => {
+    if (!selectedClientId) return null;
+    return clients.find((c) => String(c.id) === String(selectedClientId)) || null;
+  }, [clients, selectedClientId]);
+
   async function handleUpload() {
     if (!selectedFile) return setResultMsg('Select a file.');
     if (!selectedClientId) return setResultMsg('Select a client.');
@@ -52,6 +57,7 @@ export default function FileTransferPanel() {
       const { record } = await uploadToGCSDirect(selectedFile, {
         clientId: Number(selectedClientId),
         projectId: Number(selectedProjectId),
+        logType,
         onProgress: setUploadProgress,
       });
       setLoading(false);
@@ -81,6 +87,29 @@ export default function FileTransferPanel() {
               </option>
             ))}
           </select>
+
+          {/* Selected client details */}
+          {selectedClient && (
+            <div className="mt-2 text-xs text-gray-800 border rounded p-2 bg-gray-50 max-w-xs">
+              {selectedClient.companyName && (
+                <div><span className="font-semibold">Company:</span> {selectedClient.companyName}</div>
+              )}
+              {selectedClient.email && (
+                <div><span className="font-semibold">Email:</span> {selectedClient.email}</div>
+              )}
+              {selectedClient.contactNo && (
+                <div><span className="font-semibold">Contact No:</span> {selectedClient.contactNo}</div>
+              )}
+              {selectedClient.address && (
+                <div><span className="font-semibold">Address:</span> {selectedClient.address}</div>
+              )}
+              {(selectedClient.computedTotalProjects != null || selectedClient.computedActiveProjects != null || selectedClient.computedCompletedProjects != null) && (
+                <div className="mt-1 text-[11px] text-gray-600">
+                  <div>Projects — Total: {selectedClient.computedTotalProjects ?? 0}, Active: {selectedClient.computedActiveProjects ?? 0}, Completed: {selectedClient.computedCompletedProjects ?? 0}</div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* (Optional) Users list, read-only */}
