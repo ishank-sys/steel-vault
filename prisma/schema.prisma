@@ -88,16 +88,17 @@ model Project {
 }
 
 model DocumentLog {
-  id          Int      @id @default(autoincrement())
-  fileName    String
-  clientId    Int
-  projectId   Int
-  storagePath String
-  size        Int
-  uploadedAt  DateTime @default(now())
-  logType     String?
-  client      Client   @relation(fields: [clientId], references: [id])
-  project     Project  @relation(fields: [projectId], references: [id])
+  id           Int      @id @default(autoincrement())
+  fileName     String
+  clientId     Int
+  projectId    Int
+  storagePath  String
+  size         Int
+  uploadedAt   DateTime @default(now())
+  logType      String?
+  submittal    String?
+  client       Client   @relation(fields: [clientId], references: [id])
+  project      Project  @relation(fields: [projectId], references: [id])
 }
 
 // Stores the latest state of a project's drawing by DrgNo and optional category.

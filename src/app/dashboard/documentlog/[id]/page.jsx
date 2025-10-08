@@ -16,9 +16,17 @@ export default function DocumentLogPage() {
         const res = await fetch("/api/document-logs");
         const data = await res.json();
         // Filter logs for this project id
-        const filteredLogs = (Array.isArray(data) ? data : []).filter(
-          (log) => String(log.projectId) === String(id)
-        );
+        const filteredLogs = (Array.isArray(data) ? data : [])
+          .filter((log) => String(log.projectId) === String(id))
+          .map((log) => {
+            let submittal = log.submittal ?? log.submittalName;
+            if (!submittal && typeof log.storagePath === 'string') {
+              // Try to infer from storage path: .../packages/{submittal}/...
+              const m = log.storagePath.match(/\/packages\/([^\/]+)\//i);
+              if (m && m[1]) submittal = m[1];
+            }
+            return { ...log, submittal };
+          });
         setLogs(filteredLogs);
         setFiltered(filteredLogs);
       } catch (e) {
@@ -34,13 +42,15 @@ export default function DocumentLogPage() {
     "Log Type",
     "Uploaded At",
     "Size (bytes)",
+    "Submittal",
     "Download"
   ];
   const keys = [
     "fileName",
     "logType",
     "uploadedAt",
-    "size"
+    "size",
+    "submittal",
   ];
 
   // Download handler: fetch signed URL and trigger download

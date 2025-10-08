@@ -26,6 +26,10 @@ const TransmittalForm = () => {
   const [publishResult, setPublishResult] = useState(null);
   const [showPublishModal, setShowPublishModal] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  // Email fields
+  const [toEmails, setToEmails] = useState('');
+  const [emailSubject, setEmailSubject] = useState('');
+  const [emailBody, setEmailBody] = useState('');
 
   // Date logic from HybridPublishDrawings
   const today = new Date().toISOString().slice(0, 10);
@@ -669,6 +673,51 @@ const handlePublish = async () => {
     setPublishResult({ success: true, data: res });
     setShowPublishModal(true);
 
+    // Send notification email if recipients provided
+    const recipients = String(toEmails || '').trim();
+    if (recipients) {
+      try {
+        // Resolve client name for email metadata
+        let clientNameSafe = undefined;
+        try {
+          const cres = await fetch('/api/clients', { cache: 'no-store' });
+          if (cres.ok) {
+            const clist = await cres.json();
+            const c = (clist || []).find(x => String(x.id) === String(selectedClientId));
+            if (c?.name) clientNameSafe = c.name;
+          }
+        } catch {}
+        const resp = await fetch('/api/send-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: recipients,
+            subject: emailSubject || undefined,
+            text: emailBody || undefined,
+            clientName: clientNameSafe || undefined,
+            projectName: projectName || undefined,
+            submittalName: selectedPackageName || undefined,
+            storagePath: (res?.record?.storagePath || res?.record?.storage_path || res?.objectPath || '').replace(/^gs:\/\/[^/]+\//, ''),
+          })
+        });
+        const respJson = await resp.json().catch(() => ({}));
+        if (resp.ok && (respJson?.sent === true)) {
+          const count = Number(respJson?.to ?? 0) || recipients.split(/[;,]/).map(s => s.trim()).filter(Boolean).length;
+          setPublishResult(prev => ({ ...(prev || {}), email: { sent: true, to: count } }));
+          alert(`Email sent successfully to ${count} recipient(s).`);
+        } else {
+          const errMsg = respJson?.error || resp.statusText || 'Unknown error';
+          setPublishResult(prev => ({ ...(prev || {}), email: { sent: false, error: errMsg } }));
+          alert(`Failed to send email: ${errMsg}`);
+        }
+      } catch (e) {
+        const msg = e?.message || String(e);
+        console.warn('Email notification failed:', msg);
+        setPublishResult(prev => ({ ...(prev || {}), email: { sent: false, error: msg } }));
+        alert(`Failed to send email: ${msg}`);
+      }
+    }
+
   } catch (e) {
     console.error('Publish failed:', e);
     let errorMessage = e?.message || String(e);
@@ -812,8 +861,14 @@ const handlePublish = async () => {
         <label className="flex items-center gap-1"><input type="checkbox" /> Don't send mails</label>
       </div>
 
-      {/* Remarks Section */}
+      {/* Email + Remarks Section */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+        <div>
+          <label className="text-sm">Recipients (comma/semicolon separated):</label>
+          <input value={toEmails} onChange={(e) => setToEmails(e.target.value)} className="w-full border p-2 rounded" placeholder="email1@example.com; email2@example.com" />
+          <label className="text-sm mt-2 block">Email Subject (optional):</label>
+          <input value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} className="w-full border p-2 rounded" placeholder="Subject" />
+        </div>
         <div>
           <label className="text-sm">Subject:</label>
           <textarea className="w-full border p-2 rounded" />
@@ -870,11 +925,29 @@ const handlePublish = async () => {
               <div>
                 <p className="mb-2">Publish succeeded.</p>
                 <pre className="text-xs bg-gray-100 p-2 rounded">{JSON.stringify(publishResult.data, null, 2)}</pre>
+                {publishResult?.email && (
+                  <div className="mt-3 text-sm">
+                    {publishResult.email.sent ? (
+                      <p className="text-green-700">Email: Sent to {publishResult.email.to || 0} recipient(s).</p>
+                    ) : (
+                      <p className="text-red-700">Email: Failed{publishResult.email.error ? ` — ${publishResult.email.error}` : ''}</p>
+                    )}
+                  </div>
+                )}
               </div>
             ) : (
               <div>
                 <p className="mb-2 text-red-600">Publish failed.</p>
                 <pre className="text-xs bg-gray-100 p-2 rounded">{publishResult?.error}</pre>
+                {publishResult?.email && (
+                  <div className="mt-3 text-sm">
+                    {publishResult.email.sent ? (
+                      <p className="text-green-700">Email: Sent to {publishResult.email.to || 0} recipient(s).</p>
+                    ) : (
+                      <p className="text-red-700">Email: Failed{publishResult.email.error ? ` — ${publishResult.email.error}` : ''}</p>
+                    )}
+                  </div>
+                )}
               </div>
             )}
             <div className="flex justify-end gap-2 mt-4">

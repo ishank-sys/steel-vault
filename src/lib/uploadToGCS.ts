@@ -100,7 +100,7 @@ export async function uploadToGCSDirect(
       originalName: file.name,
       storagePath: objectPath,
       size: file.size,
-      logType: "EMPLOYEE_UPLOAD",
+  logType: "EMPLOYEE_UPLOAD",
     }),
   });
   if (!logRes.ok) {

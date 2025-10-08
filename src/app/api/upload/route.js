@@ -24,8 +24,8 @@ export async function POST(req) {
     }
 
     // Direct log request (from client after GCS PUT)
-    const body = await req.json();
-    const { clientId, projectId, originalName, storagePath, size, logType } = body;
+  const body = await req.json();
+  const { clientId, projectId, originalName, storagePath, size, logType } = body;
     if (!originalName || !storagePath) {
       return NextResponse.json({ error: "originalName and storagePath are required" }, { status: 400 });
     }
