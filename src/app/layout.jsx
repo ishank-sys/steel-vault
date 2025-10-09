@@ -15,6 +15,17 @@ const geistMono = Geist_Mono({
 export const metadata = {
   title: "Login - Steel Docs",
   description: "Login to Steel Docs",
+  icons: {
+    icon: [
+      { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
+      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+      { url: "/favicon.ico", sizes: "any" },
+    ],
+    apple: { url: "/apple-touch-icon.png", sizes: "250x250" },
+    shortcut: ["/favicon.ico"],
+  },
+  manifest: "/site.webmanifest",
+  themeColor: "#ffffff",
 };
 
 export default function LoginLayout({ children }) {
