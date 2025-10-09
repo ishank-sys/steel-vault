@@ -13,7 +13,7 @@ import { useRouter } from 'next/navigation';
 
 const TransmittalForm = () => {
   // Zustand store
-  const { selectedDrawings, approvedDrawings, drawings: storeDrawings, approvedExtras, approvedModels, projectName, projectNo, selectedClientId, selectedProjectId, selectedPackageId, selectedPackageName } = useDrawingStore();
+  const { selectedDrawings, approvedDrawings, drawings: storeDrawings, approvedExtras, approvedModels, projectName, projectNo, selectedClientId, selectedProjectId, selectedPackageId, selectedPackageName, transmittalName, submittalName, zipName, generateLogName, clearLogName, setZipName } = useDrawingStore();
 
     const router = useRouter();
   
@@ -778,15 +778,15 @@ const handlePublish = async () => {
         </div>
         <div>
           <label>Transmittal Name:</label>
-          <input className="border w-full px-2 py-1 rounded" />
+          <input value={transmittalName} readOnly className="border w-full px-2 py-1 rounded bg-gray-100" />
         </div>
         <div>
           <label>Submittal Name:</label>
-          <input className="border w-full px-2 py-1 rounded" />
+          <input value={submittalName} readOnly className="border w-full px-2 py-1 rounded bg-gray-100" />
         </div>
         <div>
           <label>Zip Name:</label>
-          <input ref={zipNameRef} className="border w-full px-2 py-1 rounded" />
+          <input value={zipName} onChange={(e)=> setZipName(e.target.value)} ref={zipNameRef} className="border w-full px-2 py-1 rounded" />
         </div>
         <div>
           <label>Complete Name:</label>
@@ -853,12 +853,9 @@ const handlePublish = async () => {
 
       {/* Checkboxes */}
       <div className="flex flex-wrap items-center gap-4 text-sm mt-4">
-        <label className="flex items-center gap-1"><input type="checkbox" /> Include Item Qty</label>
-        <label className="flex items-center gap-1"><input type="checkbox" /> Allow to send cad pdf's</label>
-        <label className="flex items-center gap-1"><input type="checkbox" /> Transmittal Log</label>
-        <label className="flex items-center gap-1"><input type="checkbox" /> Submittal Log</label>
+        <label className="flex items-center gap-1"><input type="checkbox" onChange={e => e.target.checked ? generateLogName('transmittal') : clearLogName('transmittal')} /> Transmittal Log</label>
+        <label className="flex items-center gap-1"><input type="checkbox" onChange={e => e.target.checked ? generateLogName('submittal') : clearLogName('submittal')} /> Submittal Log</label>
         <label className="flex items-center gap-1"><input type="checkbox" /> Complete Log</label>
-        <label className="flex items-center gap-1"><input type="checkbox" /> Don't send mails</label>
       </div>
 
       {/* Email Section */}

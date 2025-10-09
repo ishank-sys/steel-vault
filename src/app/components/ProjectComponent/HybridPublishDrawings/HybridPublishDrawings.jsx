@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 
 
 const HybridPublishDrawings = () => {
-  const { approvedDrawings, projectName, projectNo, setSelectedDrawings } = useDrawingStore();
+  const { approvedDrawings, projectName, projectNo, setSelectedDrawings, sequenceNo, subItem1, subItem2, zipName, setSequenceNo, setSubItem1, setSubItem2, updateZipName, generateLogName, clearLogName, transmittalName, submittalName } = useDrawingStore();
   const [mappedDrawings, setMappedDrawings] = useState([]);
   const [selectedRows, setSelectedRows] = useState(new Set());
   const [voidedRows, setVoidedRows] = useState(new Set());
@@ -69,9 +69,6 @@ const handleNextClick = () => {
     fabDate: '',
     revision: '',
     sheetSize: '',
-    sequenceNo: '',
-    subItem1: '',
-    subItem2: '',
   });
 
   const handleChange = useCallback((field, value) => {
@@ -282,22 +279,27 @@ const handleNextClick = () => {
           <div className="grid grid-cols-1 gap-4">
             <InputField
               label="SEQUENCE NO :"
-              value={formData.sequenceNo}
-              onChange={(val) => handleChange('sequenceNo', val)}
+              value={sequenceNo}
+              onChange={(val) => { setSequenceNo(val); updateZipName(); }}
             />
             {/* Submittal Send for */}
             <div className="flex items-end gap-2">
               <div className="flex-1">
                 <label className="block font-medium mb-1">Submittal Send for :</label>
-                <textarea className="input bg-gray-200 resize-none h-8 w-full" rows={1} />
+                <textarea className="input bg-gray-200 resize-none h-8 w-full" rows={1} value={subItem1} onChange={(e)=> { setSubItem1(e.target.value); updateZipName(); }} />
               </div>
             </div>
 
             <div className="flex items-end gap-2">
               <div className="flex-1">
                 <label className="block font-medium mb-1">Submittal Item Name :</label>
-                <textarea className="input bg-gray-200 resize-none h-8 w-full" rows={1} />
+                <textarea className="input bg-gray-200 resize-none h-8 w-full" rows={1} value={subItem2} onChange={(e)=> { setSubItem2(e.target.value); updateZipName(); }} />
               </div>
+            </div>
+            <div className="grid grid-cols-1 gap-4">
+              <InputField label="Transmittal Name:" value={transmittalName} onChange={()=>{}} readOnly />
+              <InputField label="Submittal Name:" value={submittalName} onChange={()=>{}} readOnly />
+              <InputField label="Zip Name:" value={zipName} onChange={()=>{}} readOnly />
             </div>
           </div>
         </div>
@@ -345,6 +347,18 @@ const handleNextClick = () => {
         <span className="ml-auto text-sm text-gray-600">
           Selected: <span className="font-semibold text-gray-800">{selectedRows.size}</span> / {mappedDrawings.length}
         </span>
+      </div>
+
+      {/* Log checkboxes */}
+      <div className="flex flex-wrap items-center gap-4 text-sm mt-2 mb-4">
+        <label className="flex items-center gap-2">
+          <input type="checkbox" onChange={e => e.target.checked ? generateLogName('transmittal') : clearLogName('transmittal')} />
+          Transmittal Log
+        </label>
+        <label className="flex items-center gap-2">
+          <input type="checkbox" onChange={e => e.target.checked ? generateLogName('submittal') : clearLogName('submittal')} />
+          Submittal Log
+        </label>
       </div>
 
       {/* Drawing Table */}
