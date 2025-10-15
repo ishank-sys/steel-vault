@@ -33,6 +33,42 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+# stricter env/secret ignores
+*.env
+*.env.*
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+*.cer
+*.jks
+*.keystore
+*.kdbx
+
+# service accounts & cloud credentials
+veone-*.json
+*.serviceaccount.json
+*.gcloud.json
+*.firebase.json
+public/veone-*.json
+
+# OS/editor artifacts
+.idea/
+Thumbs.db
+*.swp
+
+# caches and temps
+.cache/
+.tmp/
+.temp/
+.tmp-*/
+
+# build artifacts additional
+dist/
+logs/
+*.log
+
 # vercel
 .vercel
 
@@ -43,3 +79,19 @@ next-env.d.ts
 /src/generated/prisma
 
 /src/generated/prisma
+
+# local db files
+prisma/*.db
+prisma/dev.db
+
+# archives and dumps
+*.zip
+*.7z
+*.tar
+*.gz
+*.tgz
+*.bak
+*.sql
+*.sqlite
+*.sqlite3
+*.db
