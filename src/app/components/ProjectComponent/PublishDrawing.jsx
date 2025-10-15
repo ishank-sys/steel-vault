@@ -11,6 +11,29 @@ import { saveAs } from "file-saver";
 
 const safeArr = (v) => (Array.isArray(v) ? v : []);
 
+// Robust matcher: does a project belong to a given client id?
+// Checks multiple common field variants to be resilient to schema drift.
+const matchesClient = (proj, clientId) => {
+  if (!proj) return false;
+  const cid = String(clientId ?? '');
+  if (!cid) return false;
+  const cand = [
+    proj.clientId,
+    proj?.client?.id,
+    proj.ownerId,
+    // tolerate legacy/variant field names
+    proj.client_id,
+    proj.clientID,
+    proj.clientid,
+    proj.customerId,
+    proj.owner_id,
+    proj.ClientId,
+    proj.ClientID,
+    proj?.Client?.id,
+  ];
+  return cand.some((v) => v != null && String(v) === cid);
+};
+
 // Tiny info popover – same UX as Code #1
 const InfoPopover = ({ title = 'Info', children }) => {
   const [open, setOpen] = useState(false);
@@ -286,6 +309,12 @@ const PublishDrawing = () => {
   const extrasUploadRef = useRef(null);
   const modelInputRef = useRef(null);
 
+  // Strict step-order guards
+  const canSelectProject = selectedClientId != null && String(selectedClientId) !== '';
+  const canSelectPackage = !!selectedProjectId;
+  const canUploadExcel = canSelectPackage; // require client + project + package before Excel
+  const canAttachPDF = canSelectPackage && (Array.isArray(drawings) && drawings.length > 0); // require drawings added from Excel
+
   /* ====== DrgNo variants map for matching ====== */
   const drgNoMap = useMemo(() => {
     const map = {};
@@ -465,18 +494,30 @@ const PublishDrawing = () => {
 
   /* ====== Project pickers (same as Code #1) ====== */
   const handleProjectChange = useCallback((e) => {
-    const selected = e.target.value;
-    const selectedProject = projects.find(p => p.projectNo === selected || p.id === selected);
+    const selectedRaw = e.target.value;
+    // Resolve selected project by matching against both projectNo and id (string/number tolerant)
+    const selectedProject = projects.find(p =>
+      String(p?.projectNo ?? '') === String(selectedRaw) || String(p?.id ?? '') === String(selectedRaw)
+    ) || null;
+
+    // Update global store display fields
     useDrawingStore.setState({
-      projectNo: selectedProject ? selectedProject.projectNo || selectedProject.id : selected,
+      projectNo: selectedProject ? (selectedProject.projectNo ?? selectedProject.id) : selectedRaw,
       projectName: selectedProject ? (selectedProject.name || selectedProject.projectName || '') : '',
     });
-    const pid = selectedProject?.id || null;
+
+    // Resolve numeric project id
+    const pidNum = selectedProject && selectedProject.id != null ? Number(selectedProject.id) : NaN;
+    const pid = Number.isFinite(pidNum) ? pidNum : null;
     setLocalSelectedProjectId(pid);
     setSelectedProjectId(pid || null);
+
     // Load packages for this project
     if (pid) {
-      fetch(`/api/packages?projectId=${pid}`).then(r => r.ok ? r.json() : []).then(arr => setPackages(arr || [])).catch(() => setPackages([]));
+      fetch(`/api/packages?projectId=${pid}`)
+        .then(r => (r.ok ? r.json() : []))
+        .then(arr => setPackages(Array.isArray(arr) ? arr : []))
+        .catch(() => setPackages([]));
       setSelectedPackageId('');
       setSelectedPackage(null);
     } else {
@@ -492,6 +533,7 @@ const PublishDrawing = () => {
       setLoadingProjects(true);
       setLoadingClients(true);
       try {
+        // Prefer server-side filtering for projects to reduce client-side mismatches
         const results = await Promise.allSettled([
           fetch('/api/users/me'),
           fetch('/api/projects'),
@@ -601,15 +643,21 @@ const PublishDrawing = () => {
   }, []);
 
   React.useEffect(() => {
-    if (selectedClientId == null) { setProjects(baseProjects || []); return; }
-    const cid = Number(selectedClientId);
-    const filtered = (baseProjects || []).filter(p => {
-      const pid = Number(p.clientId);
-      const pcid = Number(p?.client?.id);
-      const owner = Number(p?.ownerId);
-      return pid === cid || pcid === cid || owner === cid;
-    });
-    setProjects(filtered);
+    if (selectedClientId == null || String(selectedClientId) === '') { setProjects(baseProjects || []); return; }
+    const cid = String(selectedClientId);
+    // Try server-side filtered list first
+    (async () => {
+      try {
+        const r = await fetch(`/api/projects?clientId=${encodeURIComponent(cid)}`, { cache: 'no-store' });
+        if (r.ok) {
+          const arr = await r.json();
+          if (Array.isArray(arr) && arr.length) { setProjects(arr); return; }
+        }
+      } catch {}
+      const filtered = (baseProjects || []).filter(p => matchesClient(p, cid));
+      console.info('[PublishDrawing] Effect filter projects (fallback)', { clientId: cid, baseCount: (baseProjects || []).length, filteredCount: filtered.length });
+      setProjects(filtered.length ? filtered : (baseProjects || []));
+    })();
   }, [selectedClientId, baseProjects]);
 
   /* ====== Extras / 3D: stage locally ONLY (no cloud here) ====== */
@@ -702,6 +750,10 @@ const PublishDrawing = () => {
 
   /* ====== Excel upload & parse – keep File[] so we can ZIP ====== */
   const handleExcelUpload = useCallback((e) => {
+    // Enforce: client -> project -> package before uploading Excel
+    if (selectedClientId == null) return alert("Please select a Client first.");
+    if (!selectedProjectId) return alert("Please select a Project first.");
+    if (!selectedPackageId) return alert("Please select a Package first.");
     if (!useDrawingStore.getState().projectNo)
       return alert("Please select a Project No. first.");
 
@@ -765,7 +817,7 @@ const PublishDrawing = () => {
 
       reader.readAsBinaryString(file);
     });
-  }, [drawings.length]);
+  }, [drawings.length, selectedClientId, selectedProjectId, selectedPackageId]);
 
   const attachExcelToTable = useCallback(() => {
     if (!useDrawingStore.getState().projectNo)
@@ -836,7 +888,12 @@ const PublishDrawing = () => {
   };
 
   const handleAttachFiles = useCallback(() => {
+    // Enforce: Excel (drawings) must be attached before attaching PDFs; also package must be selected
+    if (selectedClientId == null) return alert("Please select a Client first.");
+    if (!selectedProjectId) return alert("Please select a Project first.");
+    if (!selectedPackageId) return alert("Please select a Package first.");
     if (!useDrawingStore.getState().projectNo) return alert("Please select a Project No. first.");
+    if (!Array.isArray(drawings) || drawings.length === 0) return alert("Please upload and attach Excel first to load drawings.");
     if (!selectedFormat) return alert("Please select a Format before attaching files.");
     if (!pendingExtraFiles.length) return alert("Please upload PDF files before attaching.");
 
@@ -910,7 +967,7 @@ const PublishDrawing = () => {
     setDrawingExtras(prev => [...safeArr(prev), ...matchedFiles]);
     setPendingExtraFiles([]);
     if (pdfDrawingsInputRef.current) pdfDrawingsInputRef.current.value = "";
-  }, [selectedFormat, pendingExtraFiles, drawings, drgNoMap, setDrawings]);
+  }, [selectedFormat, pendingExtraFiles, drawings, drgNoMap, setDrawings, selectedClientId, selectedProjectId, selectedPackageId]);
 
   /* ====== Modal ====== */
   const openModal = useCallback((row) => {
@@ -1310,11 +1367,24 @@ const PublishDrawing = () => {
           value={selectedClientId != null ? String(selectedClientId) : ''}
           onChange={(e) => {
             const raw = e.target.value;
-            const val = raw ? Number(raw) : null;
-            setSelectedClientId(val);
-            setStoreSelectedClientId(val); // Store in Zustand for TransmittalForm
-            if (val != null) {
-              const filtered = (baseProjects || []).filter(p => Number(p.clientId) === Number(val) || Number(p?.client?.id) === Number(val) || Number(p?.ownerId) === Number(val));
+            const localId = raw || null; // hold as string for robust equality checks
+            setSelectedClientId(localId);
+            // Update store using numeric when applicable
+            const storeId = localId != null && /^\d+$/.test(localId) ? Number(localId) : null;
+            setStoreSelectedClientId(storeId);
+            // Reset dependent selections
+            setLocalSelectedProjectId(null);
+            setSelectedProjectId(null);
+            setSelectedPackageId('');
+            setSelectedPackage(null);
+            // Filter projects using string-safe equality across possible fields
+            if (localId != null && localId !== '') {
+              const filtered = (baseProjects || []).filter(p => {
+                const pid = String(p?.clientId ?? '');
+                const pcid = String(p?.client?.id ?? '');
+                const owner = String(p?.ownerId ?? '');
+                return pid === localId || pcid === localId || owner === localId;
+              });
               setProjects(filtered);
             } else {
               setProjects(baseProjects || []);
@@ -1334,7 +1404,8 @@ const PublishDrawing = () => {
           value={projectNo}
           onChange={handleProjectChange}
           className="border rounded-md px-2 py-1 text-sm"
-          disabled={loadingProjects}
+          disabled={loadingProjects || !canSelectProject}
+          title={!canSelectProject ? 'Select Client first' : undefined}
         >
           <option value="">{loadingProjects ? 'Loading...' : 'Select'}</option>
           {projects.map((proj) => (
@@ -1355,7 +1426,8 @@ const PublishDrawing = () => {
             setSelectedPackage(pkg || null);
           }}
           className="border rounded-md px-2 py-1 text-sm"
-          disabled={!selectedProjectId || (packages || []).length === 0}
+          disabled={!canSelectPackage || (packages || []).length === 0}
+          title={!canSelectPackage ? 'Select Project first' : undefined}
         >
           <option value="">{!selectedProjectId ? 'Select project first' : ((packages || []).length ? 'Select package' : 'No packages')}</option>
           {(packages || []).map(p => (
@@ -1441,9 +1513,11 @@ const PublishDrawing = () => {
                     accept=".xls,.xlsx"
                     onChange={handleExcelUpload}
                     ref={excelInputRef}
-                    className="file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-teal-700 file:text-white hover:file:bg-teal-800"
+                    className="file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-teal-700 file:text-white hover:file:bg-teal-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={!canUploadExcel}
+                    title={!canUploadExcel ? 'Select Client → Project → Package before uploading Excel' : undefined}
                   />
-                  <button onClick={attachExcelToTable} className="bg-teal-800 text-white px-4 py-1.5 text-sm rounded">
+                  <button onClick={attachExcelToTable} className="bg-teal-800 text-white px-4 py-1.5 text-sm rounded disabled:opacity-50 disabled:cursor-not-allowed" disabled={!canUploadExcel || !excelFileData.length} title={!canUploadExcel ? 'Complete previous steps first' : (!excelFileData.length ? 'Upload Excel first' : undefined)}>
                     Attach .xls File
                   </button>
                 </div>
@@ -1470,17 +1544,21 @@ const PublishDrawing = () => {
                     accept=".pdf"
                     ref={pdfDrawingsInputRef}
                     onChange={(e) => {
-                      if (!useDrawingStore.getState().projectNo) {
-                        alert("Please select a Project No. first.");
+                      if (!canAttachPDF) {
+                        alert("Please complete steps: Select Client → Project → Package and attach Excel to load drawings.");
+                        if (e?.target) e.target.value = "";
                         return;
                       }
                       const files = Array.from(e.target.files || []);
                       setPendingExtraFiles(files);
                     }}
-                    className="file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-700 file:text-white hover:file:bg-blue-800"
+                    className="file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-700 file:text-white hover:file:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={!canAttachPDF}
+                    title={!canAttachPDF ? 'Upload and attach Excel first to load drawings' : undefined}
                   />
                   <button
-                    className="bg-teal-800 text-white px-4 py-1.5 text-sm rounded"
+                    className="bg-teal-800 text-white px-4 py-1.5 text-sm rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={!canAttachPDF}
                     onClick={handleAttachFiles}
                   >
                     Attach Files
@@ -1500,7 +1578,9 @@ const PublishDrawing = () => {
                         );
                       }
                     }}
-                    className="border px-2 py-1.5 text-sm rounded"
+                    className="border px-2 py-1.5 text-sm rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={!canAttachPDF}
+                    title={!canAttachPDF ? 'Complete previous steps first' : undefined}
                   >
                     <option value="">Select Format</option>
                     <option value="No Format">No Format</option>

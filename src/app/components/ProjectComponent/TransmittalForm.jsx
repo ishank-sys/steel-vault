@@ -63,13 +63,15 @@ const TransmittalForm = () => {
         if (!match || cancelled) return;
 
         // Map common fields safely. These keys are guessed based on typical schema and earlier API includes.
-        // 1) FABRICATOR JOB NO.
-        setIfEmpty(jobNoRef, match.fabricatorJobNo || match.jobNo || match.projectJobNo || '');
-        // 2) FABRICATOR CO-ORDINATOR
-        setIfEmpty(coordinatorRef, match.coordinator || match.fabricatorCoordinator || match.client?.coordinator || match.client?.contactPerson || '');
+  // 1) FABRICATOR JOB NO. -> Prefer Project.ClientprojectNo, then Client.clientJobNo
+  const clientProjNo = match?.ClientprojectNo || match?.clientProjectNo || match?.client_project_no || match?.clientProjNo || match?.client_proj_no || match?.client?.clientJobNo || match?.fabricatorJobNo || match?.jobNo || match?.projectJobNo || '';
+        setIfEmpty(jobNoRef, clientProjNo);
+        // 2) FABRICATOR CO-ORDINATOR -> prefer Project.clientPM.name
+        const pmName = match?.clientPM?.name || match?.clientPm?.name || match.coordinator || match.fabricatorCoordinator || match.client?.coordinator || match.client?.contactPerson || '';
+  setIfEmpty(coordinatorRef, pmName);
         // 3) SOL JOB NO
         setIfEmpty(solJobNoRef, match.solJobNo || match.solJob || match.projectNo || '');
-        // 4) FABRICATOR NAME
+        // 4) FABRICATOR NAME -> Prefer Client.name; fallback to embedded project.client
         setIfEmpty(fabricatorNameRef, match.client?.name || match.fabricatorName || match.clientName || '');
         // 5) SOL Team Leader
         setIfEmpty(teamLeaderRef, match.solTL?.name || match.teamLeader || match.teamLead || '');
@@ -83,6 +85,32 @@ const TransmittalForm = () => {
 
     return () => { cancelled = true; };
   }, [projectNo, projectName]);
+
+  // When client changes, fetch Client table to fill Fabricator Name = Client.name and Job No = Client.clientJobNo (if present)
+  useEffect(() => {
+    let cancelled = false;
+    const loadClientName = async () => {
+      if (selectedClientId == null) return;
+      try {
+        const res = await fetch('/api/clients', { cache: 'no-store' });
+        if (!res.ok) return;
+        const list = await res.json();
+        if (!Array.isArray(list)) return;
+        const cid = Number(selectedClientId);
+        const match = list.find(c => Number(c.id) === cid);
+        if (cancelled) return;
+        // Always set if empty to avoid overwriting manual edits
+        if (match?.name && fabricatorNameRef?.current && (!fabricatorNameRef.current.value || fabricatorNameRef.current.value.trim().length === 0)) {
+          try { fabricatorNameRef.current.value = String(match.name); } catch {}
+        }
+        if (match?.clientJobNo && jobNoRef?.current && (!jobNoRef.current.value || jobNoRef.current.value.trim().length === 0)) {
+          try { jobNoRef.current.value = String(match.clientJobNo); } catch {}
+        }
+      } catch {}
+    };
+    loadClientName();
+    return () => { cancelled = true; };
+  }, [selectedClientId]);
 
   // Map approvedDrawings to the table format you need, with date logic
 const tableDrawings = selectedDrawings.map((d, i) => {
