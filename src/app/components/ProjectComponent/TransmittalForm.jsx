@@ -407,11 +407,6 @@ const handleDownload = async () => {
 
   // Table generation (same grouping logic)
   let grouped = {};
-  const tableDrawings = selectedDrawings.map((d, i) => ({
-    drawingNo: d.drawingNo || d.drgNo || '-',
-    desc: d.itemName || d.item || '-',
-    void: d.void || false,
-  }));
   tableDrawings.forEach(item => {
     const desc = item.void ? `${item.desc} [VOID]` : item.desc;
     if (!grouped[desc]) grouped[desc] = [];
@@ -634,11 +629,6 @@ const handlePublish = async () => {
     doc.text(`PROJECT NAME: ${projectName}`, 40, y + 30);
     doc.text(`DATE: ${formattedDate}`, 350, y);
     let grouped = {};
-    const tableDrawings = selectedDrawings.map((d) => ({
-      drawingNo: d.drawingNo || d.drgNo || '-',
-      desc: d.itemName || d.item || '-',
-      void: d.void || false,
-    }));
     tableDrawings.forEach(item => {
       const desc = item.void ? `${item.desc} [VOID]` : item.desc;
       if (!grouped[desc]) grouped[desc] = [];
