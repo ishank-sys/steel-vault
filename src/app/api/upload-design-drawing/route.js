@@ -128,6 +128,68 @@ export async function POST(req) {
             logType,
           },
         });
+        // Upsert into ProjectDrawing so filenames are visible in Supabase
+        try {
+          const drawingBase = String(file.name || '').replace(/\.[^/.]+$/, '').trim() || (file.name || `upload-${Date.now()}`);
+          const inferredCategory = 'A'; // design-drawings -> A (Shop)
+          await prisma.projectDrawing.upsert({
+            where: {
+              projectId_drgNo_category: {
+                projectId: Number(projectId),
+                drgNo: drawingBase,
+                category: inferredCategory,
+              },
+            },
+            update: {
+              fileName: file.name || undefined,
+              lastAttachedAt: new Date(),
+              meta: {
+                fileNames: [file.name],
+                storagePath: objectPath,
+                size: fileSize,
+                source: 'upload-design-drawing',
+                logType,
+              },
+            },
+            create: {
+              clientId: client.id,
+              projectId: Number(projectId),
+              drgNo: drawingBase,
+              category: inferredCategory,
+              fileName: file.name || undefined,
+              lastAttachedAt: new Date(),
+              meta: {
+                fileNames: [file.name],
+                storagePath: objectPath,
+                size: fileSize,
+                source: 'upload-design-drawing',
+                logType,
+              },
+            },
+          });
+        } catch (e) {
+          console.warn('[upload-design-drawing] ProjectDrawing upsert failed, attempting API fallback:', e?.message || e);
+          try {
+            const origin = req.headers.get('origin') || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+            await fetch(`${origin}/api/project-drawings`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                clientId: client.id,
+                projectId: Number(projectId),
+                entries: [{
+                  drawingNumber: String(file.name || '').replace(/\.[^/.]+$/, '').trim() || (file.name || `upload-${Date.now()}`),
+                  category: 'A',
+                  revision: null,
+                  fileNames: [file.name],
+                  issueDate: new Date().toISOString().slice(0,10),
+                }]
+              })
+            });
+          } catch (fallbackErr) {
+            console.warn('[upload-design-drawing] Fallback /api/project-drawings failed:', fallbackErr?.message || fallbackErr);
+          }
+        }
         return NextResponse.json({
           message: alreadyExists ? 'File replaced/navigated' : 'Uploaded',
           record: typeof created !== 'undefined' ? created : { storagePath: objectPath },

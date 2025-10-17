@@ -166,6 +166,69 @@ export async function POST(req) {
           },
         });
 
+        // Upsert into ProjectDrawing so filenames show in Supabase
+        try {
+          const drawingBase = String(originalName).replace(/\.[^/.]+$/, '').trim() || originalName;
+          const inferredCategory = fileType === '3D Model' ? 'MODEL' : 'EXTRA';
+          await prisma.projectDrawing.upsert({
+            where: {
+              projectId_drgNo_category: {
+                projectId: Number(projectId),
+                drgNo: drawingBase,
+                category: inferredCategory,
+              },
+            },
+            update: {
+              fileName: originalName,
+              lastAttachedAt: new Date(),
+              meta: {
+                fileNames: [originalName],
+                storagePath: destinationPath,
+                size: fileSize,
+                source: 'upload-extra-3d',
+                logType: `${fileType.toUpperCase()}_${logType}`,
+              },
+            },
+            create: {
+              clientId,
+              projectId: Number(projectId),
+              drgNo: drawingBase,
+              category: inferredCategory,
+              fileName: originalName,
+              lastAttachedAt: new Date(),
+              meta: {
+                fileNames: [originalName],
+                storagePath: destinationPath,
+                size: fileSize,
+                source: 'upload-extra-3d',
+                logType: `${fileType.toUpperCase()}_${logType}`,
+              },
+            },
+          });
+        } catch (e) {
+          console.warn('[upload-extra-3d] ProjectDrawing upsert failed, attempting API fallback:', e?.message || e);
+          try {
+            const origin = req.headers.get('origin') || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+            await fetch(`${origin}/api/project-drawings`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                clientId,
+                projectId: Number(projectId),
+                entries: [{
+                  drawingNumber: String(originalName).replace(/\.[^/.]+$/, '').trim() || originalName,
+                  category: fileType === '3D Model' ? 'MODEL' : 'EXTRA',
+                  revision: null,
+                  fileNames: [originalName],
+                  issueDate: new Date().toISOString().slice(0,10),
+                }]
+              })
+            });
+          } catch (fallbackErr) {
+            console.warn('[upload-extra-3d] Fallback /api/project-drawings failed:', fallbackErr?.message || fallbackErr);
+          }
+        }
+
         return NextResponse.json({
           message: alreadyExists ? 'File replaced' : 'Uploaded successfully',
           record: created,

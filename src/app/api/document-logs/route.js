@@ -5,8 +5,11 @@ import { prisma } from '@/lib/prisma.js';
 
 export const runtime = 'nodejs';
 
-export async function GET() {
+export async function GET(req) {
   try {
+    const url = new URL(req.url);
+    const scope = url.searchParams.get('scope');
+    const tlIdParam = url.searchParams.get('tlId');
     const session = await getServerSession(authOptions);
     if (!session?.user?.email) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
@@ -24,12 +27,24 @@ export async function GET() {
 
     const isAdmin = String(user.userType || '').toLowerCase() === 'admin';
 
-    const where = isAdmin
-      ? {}
-      : {
-          // Without a userId on DocumentLog, scope by user's client
-          clientId: user.clientId ?? undefined,
-        };
+    let where = {};
+    if (scope === 'tl') {
+      // Team-lead scoped: show only logs for projects where this user is solTL
+      if (isAdmin) {
+        // Admin can optionally scope by tlId
+        const tlId = tlIdParam ? Number(tlIdParam) : null;
+        if (Number.isFinite(tlId)) {
+          where = { project: { solTLId: tlId } };
+        } else {
+          where = {};
+        }
+      } else {
+        where = { project: { solTLId: user.id } };
+      }
+    } else {
+      // Default behavior: admin sees all; non-admin by clientId
+      where = isAdmin ? {} : { clientId: user.clientId ?? undefined };
+    }
 
     const documentLogs = await prisma.documentLog.findMany({
       where,

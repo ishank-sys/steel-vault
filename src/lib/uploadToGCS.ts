@@ -97,6 +97,8 @@ export async function uploadToGCSDirect(
     body: JSON.stringify({
       clientId: clientId ?? null,
       projectId: projectId ?? null,
+      packageId: packageId ?? null,
+      packageName: packageName ?? null,
       originalName: file.name,
       storagePath: objectPath,
       size: file.size,

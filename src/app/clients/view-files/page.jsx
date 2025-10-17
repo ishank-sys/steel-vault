@@ -6,84 +6,52 @@ import Footer from "../../components/footer";
 import Navbar from "../../components/navbar";
 
 const ViewFiles = () => {
-  const [clients, setClients] = useState([]);
-  const [selectedClientId, setSelectedClientId] = useState("");
   const [currentClientName, setCurrentClientName] = useState("");
-  const [projects, setProjects] = useState([]);
-  const [selectedProjectId, setSelectedProjectId] = useState("");
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    const fetchClients = async () => {
+    const bootstrap = async () => {
       try {
-        const res = await fetch(`/api/clients`);
-        const data = await res.json();
-        setClients(data);
-
-        // determine if logged-in user is a client and auto-select their client
-        try {
-          const me = await fetch('/api/users/me');
-          if (me.ok) {
-            const user = await me.json();
-            if (user && user.userType && user.userType.toLowerCase() === 'client') {
-              const client = user.client;
-              if (client && client.id) {
-                setSelectedClientId(String(client.id));
-                setCurrentClientName(client.name || '');
-                // Fetch projects and show dropdown for client user
-                const resProj = await fetch(`/api/projects?clientId=${client.id}`);
-                const dataProj = await resProj.json();
-                setProjects(Array.isArray(dataProj) ? dataProj : []);
-                // Optionally auto-select first project and fetch files for it
-                if (Array.isArray(dataProj) && dataProj.length > 0) {
-                  setSelectedProjectId(""); // or setSelectedProjectId(dataProj[0].id) to auto-select first
-                  setFiles([]);
-                } else {
-                  setSelectedProjectId("");
-                  setFiles([]);
-                }
-              }
+        const me = await fetch('/api/users/me', { cache: 'no-store' });
+        if (me.ok) {
+          const user = await me.json();
+          const role = String(user?.userType || '').toLowerCase();
+          const admin = role === 'admin';
+          setIsAdmin(admin);
+          if (!admin) {
+            const client = user?.client;
+            if (client?.id) {
+              setCurrentClientName(client.name || '');
+              await fetchFilesScoped({ clientId: client.id });
+            } else {
+              setFiles([]);
             }
+          } else {
+            // admin: fetch all files
+            await fetchFilesScoped({});
           }
-        } catch (e) {
-          // ignore me fetch errors
+        } else {
+          setFiles([]);
         }
-      } catch (err) {
-        console.error("Error fetching clients:", err);
+      } catch (e) {
+        console.error('bootstrap failed', e);
+        setFiles([]);
       }
     };
 
-    fetchClients();
+    bootstrap();
   }, []);
 
-  // Fetch projects for a client
-  const fetchProjects = async (clientId) => {
-    setProjects([]);
-    setSelectedProjectId("");
-    setFiles([]);
-    if (!clientId) return;
-    try {
-      const res = await fetch(`/api/projects?clientId=${clientId}`);
-      const data = await res.json();
-      setProjects(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error("Error fetching projects:", err);
-      setProjects([]);
-    }
-  };
-
-  const fetchFiles = async (clientId, projectId) => {
+  const fetchFilesScoped = async ({ clientId, projectId } = {}) => {
     setLoading(true);
     try {
-      let url = `/api/files?clientId=${clientId}`;
-      if (projectId) {
-        // Find the project name from the projects array
-        const project = projects.find((p) => String(p.id) === String(projectId));
-        if (project && project.name) {
-          url += `&projectName=${encodeURIComponent(project.name)}`;
-        }
-      }
+      // Build URL; clientId is optional now (server scopes by session)
+      const params = new URLSearchParams();
+      if (clientId != null) params.set('clientId', String(clientId));
+      if (projectId != null) params.set('projectId', String(projectId));
+      const url = `/api/files${params.toString() ? `?${params.toString()}` : ''}`;
       const res = await fetch(url);
       const data = await res.json();
       setFiles(Array.isArray(data) ? data : []);
@@ -95,32 +63,6 @@ const ViewFiles = () => {
     }
   };
 
-  const handleClientChange = (e) => {
-    const clientId = e.target.value;
-    setSelectedClientId(clientId);
-    setSelectedProjectId("");
-    setProjects([]);
-    setFiles([]);
-    if (clientId) {
-      fetchProjects(clientId);
-    } else {
-      setProjects([]);
-      setFiles([]);
-    }
-  };
-
-  const handleProjectChange = (e) => {
-    const projectId = e.target.value;
-    setSelectedProjectId(projectId);
-    if (selectedClientId && projectId) {
-      fetchFiles(selectedClientId, projectId);
-    } else if (selectedClientId) {
-      fetchFiles(selectedClientId);
-    } else {
-      setFiles([]);
-    }
-  };
-
   return (
     <div className="view-files-page flex flex-col min-h-screen">
       <Navbar />
@@ -129,47 +71,14 @@ const ViewFiles = () => {
         <div className="flex-1 p-4">
           <h1 className="text-2xl font-bold mb-4">View Files</h1>
 
+          {/* Header context: show which client user is seeing; admin sees all files */}
           <div className="mb-4">
-            <label className="block text-lg font-medium mb-2">Client:</label>
-            {/* If currentClientName is set (user is a client), show read-only name; otherwise show dropdown */}
-            {currentClientName ? (
-              <div className="px-3 py-2 border border-gray-300 rounded bg-gray-50">{currentClientName}</div>
+            {isAdmin ? (
+              <div className="px-3 py-2 border border-gray-300 rounded bg-gray-50">Showing all uploads (Admin)</div>
             ) : (
-              <select
-                id="client-select"
-                value={selectedClientId}
-                onChange={handleClientChange}
-                className="border border-gray-300 rounded px-3 py-2 w-full"
-              >
-                <option value="">-- Select a Client --</option>
-                {clients.map((client) => (
-                  <option key={client.id} value={client.id}>
-                    {client.name}
-                  </option>
-                ))}
-              </select>
+              <div className="px-3 py-2 border border-gray-300 rounded bg-gray-50">{currentClientName || 'Uploads'}</div>
             )}
           </div>
-
-          {/* Project dropdown, only show if projects exist */}
-          {projects.length > 0 && (
-            <div className="mb-4">
-              <label className="block text-lg font-medium mb-2">Project:</label>
-              <select
-                id="project-select"
-                value={selectedProjectId}
-                onChange={handleProjectChange}
-                className="border border-gray-300 rounded px-3 py-2 w-full"
-              >
-                <option value="">-- Select a Project --</option>
-                {projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
 
           {loading && <p className="text-gray-500">Loading files...</p>}
 
@@ -234,9 +143,9 @@ const ViewFiles = () => {
             </table>
           )}
 
-          {!loading && files.length === 0 && selectedClientId && (
+          {!loading && files.length === 0 && (
             <p className="text-gray-500">
-              No files found for the selected client{selectedProjectId ? ' and project' : ''}.
+              No files found.
             </p>
           )}
         </div>

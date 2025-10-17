@@ -25,16 +25,17 @@ export async function POST(req) {
 
     // Direct log request (from client after GCS PUT)
   const body = await req.json();
-  const { clientId, projectId, originalName, storagePath, size, logType } = body;
+  const { clientId, projectId, packageId, packageName, originalName, storagePath, size, logType } = body;
     if (!originalName || !storagePath) {
       return NextResponse.json({ error: "originalName and storagePath are required" }, { status: 400 });
     }
 
     const cleanClientId = typeof clientId === "string" ? parseInt(clientId, 10) : Number(clientId);
-    const cleanProjectId = typeof projectId === "string" ? parseInt(projectId, 10) : Number(projectId);
+  const cleanProjectId = typeof projectId === "string" ? parseInt(projectId, 10) : Number(projectId);
+  const cleanPackageId = packageId != null ? (typeof packageId === "string" ? parseInt(packageId, 10) : Number(packageId)) : null;
 
     if (process.env.NODE_ENV !== 'production') {
-      console.log('[upload] payload', { clientId, projectId, cleanClientId, cleanProjectId, originalName, storagePath, size, logType });
+      console.log('[upload] payload', { clientId, projectId, packageId, packageName, cleanClientId, cleanProjectId, cleanPackageId, originalName, storagePath, size, logType });
     }
 
     // Enforce non-null clientId/projectId per schema requirements
@@ -96,6 +97,79 @@ export async function POST(req) {
       if (clientVerifyWarning) extra.push(`clientVerifyWarning=${clientVerifyWarning}`);
       if (projectVerifyWarning) extra.push(`projectVerifyWarning=${projectVerifyWarning}`);
       return NextResponse.json({ error: process.env.NODE_ENV !== 'production' ? `Failed to log upload: ${msg}${extra.length ? ' | ' + extra.join(' | ') : ''}` : 'Failed to log upload' }, { status: 500 });
+    }
+
+  // Also upsert into ProjectDrawing so filenames appear in Supabase for the project
+    try {
+      // Derive a drawing number from the file name (strip extension)
+      const drawingBase = String(originalName).replace(/\.[^/.]+$/, '').trim() || String(originalName);
+      // Infer a loose category from the path if available; default to empty string
+      let inferredCategory = '';
+      if (/design-drawings\//i.test(normalizedPath)) inferredCategory = 'A';
+      else if (/3d-models\//i.test(normalizedPath)) inferredCategory = 'MODEL';
+      else if (/extras\//i.test(normalizedPath)) inferredCategory = 'EXTRA';
+
+      await prisma.projectDrawing.upsert({
+        where: {
+          projectId_drgNo_category: {
+            projectId: cleanProjectId,
+            drgNo: drawingBase,
+            category: inferredCategory,
+          },
+        },
+        update: {
+          fileName: originalName,
+          lastAttachedAt: new Date(),
+          meta: {
+            fileNames: [originalName],
+            storagePath: normalizedPath,
+            size: normSize,
+            source: 'upload-api',
+            logType: logType || 'EMPLOYEE_UPLOAD',
+          },
+          ...(cleanPackageId != null ? { /* @ts-ignore */ packageId: cleanPackageId } : {}),
+        },
+        create: {
+          clientId: cleanClientId,
+          projectId: cleanProjectId,
+          drgNo: drawingBase,
+          category: inferredCategory,
+          fileName: originalName,
+          lastAttachedAt: new Date(),
+          meta: {
+            fileNames: [originalName],
+            storagePath: normalizedPath,
+            size: normSize,
+            source: 'upload-api',
+            logType: logType || 'EMPLOYEE_UPLOAD',
+          },
+          ...(cleanPackageId != null ? { /* @ts-ignore */ packageId: cleanPackageId } : {}),
+        },
+      });
+    } catch (e) {
+      console.warn('[upload] ProjectDrawing upsert failed, attempting API fallback:', e?.message || e);
+      try {
+        const origin = req.headers.get('origin') || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+        await fetch(`${origin}/api/project-drawings`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            clientId: cleanClientId,
+            projectId: cleanProjectId,
+            packageId: cleanPackageId ?? undefined,
+            entries: [{
+              drawingNumber: drawingBase,
+              category: inferredCategory,
+              revision: null,
+              fileNames: [originalName],
+              issueDate: new Date().toISOString().slice(0,10),
+            }]
+          })
+        });
+      } catch (fallbackErr) {
+        console.warn('[upload] Fallback /api/project-drawings failed:', fallbackErr?.message || fallbackErr);
+      }
+      // Do not fail the whole request if ProjectDrawing update fails
     }
 
     // Optional: maintain separate upload table if present

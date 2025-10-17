@@ -585,6 +585,8 @@ const handlePublish = async () => {
           drawingNumber: drawingToSend,
           category,
           revision: d.rev || null,
+          fileNames: (d.attachedPdfs || []).map(f => f.name || f.file?.name || ''),
+          issueDate: new Date().toISOString().slice(0,10),
         };
       })
       .filter(e => e.drawingNumber);
@@ -679,8 +681,9 @@ const handlePublish = async () => {
     zip.file(`${zipName || 'Transmittal'}.pdf`, pdfBlob);
     zip.file(`${zipName || 'Transmittal'}.xlsx`, excelBlob);
 
-    const content = await zip.generateAsync({ type: "blob" });
-    const zipFile = new File([content], `${zipName || 'Transmittal'}.zip`, { type: 'application/zip' });
+  const content = await zip.generateAsync({ type: "blob" });
+  const zipFileName = `${zipName || 'Transmittal'}.zip`;
+  const zipFile = new File([content], zipFileName, { type: 'application/zip' });
     const res = await uploadToGCSDirect(zipFile, {
       clientId: Number(clientId),
       projectId: Number(projectIdToSend),
@@ -688,7 +691,13 @@ const handlePublish = async () => {
       packageName: selectedPackageName || undefined,
       onProgress: setUploadProgress,
     });
-    setPublishResult({ success: true, data: res });
+    const summary = {
+      name: zipFileName,
+      clientId: Number(clientId),
+      projectId: Number(projectIdToSend),
+      uploadTime: (res?.record?.uploadedAt || new Date().toISOString())
+    };
+    setPublishResult({ success: true, data: res, summary });
     setShowPublishModal(true);
 
     // Send notification email if recipients provided
@@ -948,11 +957,34 @@ const handlePublish = async () => {
             </button>
             <h2 className="font-bold mb-2">Publish Result</h2>
             {publishResult?.success ? (
-              <div>
-                <p className="mb-2">Publish succeeded.</p>
-                <pre className="text-xs bg-gray-100 p-2 rounded">{JSON.stringify(publishResult.data, null, 2)}</pre>
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-green-100 text-green-700">✓</span>
+                  <p className="font-medium text-green-700">Publish succeeded</p>
+                </div>
+                <div className="border rounded-md overflow-hidden">
+                  <div className="bg-gray-50 px-3 py-2 text-sm font-medium">Summary</div>
+                  <div className="p-3 text-sm">
+                    <div className="grid grid-cols-2 gap-y-2">
+                      <div className="text-gray-500">Name</div>
+                      <div className="font-medium truncate" title={publishResult?.summary?.name || publishResult?.data?.record?.fileName}>{publishResult?.summary?.name || publishResult?.data?.record?.fileName || '-'}</div>
+                      <div className="text-gray-500">Client ID</div>
+                      <div className="font-medium">{publishResult?.summary?.clientId ?? '-'}</div>
+                      <div className="text-gray-500">Project ID</div>
+                      <div className="font-medium">{publishResult?.summary?.projectId ?? '-'}</div>
+                      <div className="text-gray-500">Upload time</div>
+                      <div className="font-medium">{publishResult?.summary?.uploadTime ? new Date(publishResult.summary.uploadTime).toLocaleString() : '-'}</div>
+                    </div>
+                    {publishResult?.data?.record?.storagePath && (
+                      <div className="mt-3 text-xs text-gray-500">
+                        <span className="mr-1">Storage:</span>
+                        <span className="font-mono break-all">{publishResult.data.record.storagePath}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
                 {publishResult?.email && (
-                  <div className="mt-3 text-sm">
+                  <div className="mt-1 text-sm">
                     {publishResult.email.sent ? (
                       <p className="text-green-700">Email: Sent to {publishResult.email.to || 0} recipient(s).</p>
                     ) : (

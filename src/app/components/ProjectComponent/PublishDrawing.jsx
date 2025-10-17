@@ -535,9 +535,10 @@ const PublishDrawing = () => {
       try {
         // Prefer server-side filtering for projects to reduce client-side mismatches
         const results = await Promise.allSettled([
-          fetch('/api/users/me'),
-          fetch('/api/projects'),
-          fetch('/api/clients'),
+          fetch('/api/users/me', { cache: 'no-store' }),
+          // ask server to scope by TL when possible; server will use session for non-admins
+          fetch('/api/projects?scope=tl', { cache: 'no-store' }),
+          fetch('/api/clients', { cache: 'no-store' }),
         ]);
 
         const ures = results[0], pres = results[1], cres = results[2];
@@ -584,7 +585,7 @@ const PublishDrawing = () => {
             setStoreSelectedClientId(firstId);
             setProjects(firstId != null ? base.filter(p => Number(p.clientId) === firstId || Number(p?.client?.id) === firstId || Number(p?.ownerId) === firstId) : base);
           }
-        } else if (udata && String(udata.userType || '').toLowerCase() !== 'admin') {
+  } else if (udata && String(udata.userType || '').toLowerCase() !== 'admin') {
           // 2) Client-mode: if user tied to a client, show only that client's projects
           const cid = udata.clientId || udata.client?.id || null;
           const base = cid != null ? (plist || []).filter(p => Number(p.clientId) === Number(cid) || Number(p?.client?.id) === Number(cid) || Number(p?.ownerId) === Number(cid)) : (plist || []);
@@ -648,7 +649,8 @@ const PublishDrawing = () => {
     // Try server-side filtered list first
     (async () => {
       try {
-        const r = await fetch(`/api/projects?clientId=${encodeURIComponent(cid)}`, { cache: 'no-store' });
+        // include scope=tl to only get TL-visible projects for this client
+        const r = await fetch(`/api/projects?clientId=${encodeURIComponent(cid)}&scope=tl`, { cache: 'no-store' });
         if (r.ok) {
           const arr = await r.json();
           if (Array.isArray(arr) && arr.length) { setProjects(arr); return; }
@@ -900,7 +902,8 @@ const PublishDrawing = () => {
     let regex = null;
     if (selectedFormat !== "No Format") regex = formatRegexMap[selectedFormat];
 
-    const matchedFiles = [];
+  const matchedFiles = [];
+  const entriesToLog = [];
     const unmatchedFiles = [];
 
     const updatedDrawings = drawings.map(row => ({ ...row, attachedPdfs: row.attachedPdfs ? [...row.attachedPdfs] : [] }));
@@ -943,6 +946,17 @@ const PublishDrawing = () => {
           const row = updatedDrawings[idx];
           row.attachedPdfs = [file]; // enforce single PDF per drawing: latest wins
           matchedFiles.push(file);
+          // Collect entry for immediate DB logging
+          const dNo = row?.drgNo || row?.drawingNo || '';
+          const cat = normalizeCategory(row?.category || '');
+          const rev = row?.rev || null;
+          entriesToLog.push({
+            drawingNumber: dNo,
+            category: cat,
+            revision: rev,
+            fileNames: [file.name],
+            issueDate: new Date().toISOString().slice(0,10),
+          });
         } else {
           unmatchedFiles.push(file.name);
         }
@@ -967,6 +981,29 @@ const PublishDrawing = () => {
     setDrawingExtras(prev => [...safeArr(prev), ...matchedFiles]);
     setPendingExtraFiles([]);
     if (pdfDrawingsInputRef.current) pdfDrawingsInputRef.current.value = "";
+
+    // Fire-and-forget logging to ProjectDrawing for matched files
+    (async () => {
+      try {
+        const cid = selectedClientId != null && /^\d+$/.test(String(selectedClientId)) ? Number(selectedClientId) : null;
+        const pid = selectedProjectId != null ? Number(selectedProjectId) : null;
+        const pkg = selectedPackageId != null && /^\d+$/.test(String(selectedPackageId)) ? Number(selectedPackageId) : undefined;
+        if (!cid || !pid || !entriesToLog.length) return;
+        await fetch('/api/project-drawings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            clientId: cid,
+            projectId: pid,
+            packageId: pkg,
+            entries: entriesToLog,
+          })
+        });
+      } catch (e) {
+        // Silent failure; UI already attached locally
+        console.warn('ProjectDrawing quick log failed:', e?.message || e);
+      }
+    })();
   }, [selectedFormat, pendingExtraFiles, drawings, drgNoMap, setDrawings, selectedClientId, selectedProjectId, selectedPackageId]);
 
   /* ====== Modal ====== */
@@ -1074,6 +1111,12 @@ const PublishDrawing = () => {
      - Excel -> Drawing/Excel/<EXT>/
   */
   const handleDownloadAllFiles = useCallback(async () => {
+    // Guard: require at least one drawing PDF to be attached
+    const hasAnyPdf = safeArr(drawings).some(d => Array.isArray(d.attachedPdfs) && d.attachedPdfs.length > 0);
+    if (!hasAnyPdf) {
+      alert('Please attach at least one PDF drawing before downloading.');
+      return;
+    }
     const zip = new JSZip();
     const rootFolder = zip.folder("Drawing");
 
@@ -1659,7 +1702,9 @@ const PublishDrawing = () => {
       <div className="mt-4 flex justify-start">
         <button
           onClick={handleDownloadAllFiles}
-          className="bg-teal-800 text-white px-4 py-2 rounded text-sm mr-2"
+          className="bg-teal-800 text-white px-4 py-2 rounded text-sm mr-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          disabled={attachmentStats.attached === 0}
+          title={attachmentStats.attached === 0 ? 'Attach at least one PDF drawing first' : undefined}
         >
           Download Drawing
         </button>

@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma.js";
 import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 
 function generateProjectNo() {
   const year = new Date().getFullYear();
@@ -12,6 +14,15 @@ export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
     const clientId = searchParams.get('clientId');
+    const scope = searchParams.get('scope');
+    const tlIdParam = searchParams.get('tlId');
+    let session = null;
+    try {
+      // Session only needed when scoping to TL
+      if (scope === 'tl') {
+        session = await getServerSession(authOptions);
+      }
+    } catch {}
 
   // First, introspect available Project columns so we don't reference non-existent ones.
   const cols = await prisma.$queryRaw`SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'Project'`;
@@ -69,9 +80,31 @@ export async function GET(req) {
   LEFT JOIN "User" upm ON upm."id" = p."clientPm"`;
 
     const params = [];
+    const whereClauses = [];
     if (clientId) {
-      query += ` WHERE p."clientId" = $${params.length + 1}`;
+      whereClauses.push(`p."clientId" = $${params.length + 1}`);
       params.push(Number(clientId));
+    }
+    if (scope === 'tl') {
+      // Admin can optionally pass tlId to scope; non-admin forced to their own id
+      const isAdmin = String(session?.user?.userType || '').toLowerCase() === 'admin';
+      const tlIdNum = tlIdParam ? Number(tlIdParam) : Number(session?.user?.id);
+      if (!Number.isNaN(tlIdNum) && Number.isFinite(tlIdNum)) {
+        // Only apply where if non-admin OR admin explicitly provided tlId
+        if (!isAdmin || (isAdmin && tlIdParam)) {
+          // Prefer direct column if present
+          if (colSet.has('solTLId')) {
+            whereClauses.push(`p."solTLId" = $${params.length + 1}`);
+          } else {
+            // Fallback to joined user id (join already present)
+            whereClauses.push(`u."id" = $${params.length + 1}`);
+          }
+          params.push(tlIdNum);
+        }
+      }
+    }
+    if (whereClauses.length) {
+      query += ` WHERE ` + whereClauses.join(' AND ');
     }
     query += ` ORDER BY p."${orderCol}" DESC`;
 
@@ -115,7 +148,20 @@ export async function GET(req) {
       // Fallback to Prisma (works when schema matches DB)
       const { searchParams } = new URL(req.url);
       const clientId = searchParams.get('clientId');
+      const scope = searchParams.get('scope');
+      const tlIdParam = searchParams.get('tlId');
+      let session = null;
+      try { if (scope === 'tl') session = await getServerSession(authOptions); } catch {}
       const where = clientId ? { clientId: Number(clientId) } : {};
+      if (scope === 'tl') {
+        const isAdmin = String(session?.user?.userType || '').toLowerCase() === 'admin';
+        const tlIdNum = tlIdParam ? Number(tlIdParam) : Number(session?.user?.id);
+        if (!Number.isNaN(tlIdNum) && Number.isFinite(tlIdNum)) {
+          if (!isAdmin || (isAdmin && tlIdParam)) {
+            where.solTLId = tlIdNum;
+          }
+        }
+      }
       const projects = await prisma.project.findMany({
         where,
         orderBy: { createdAt: 'desc' },

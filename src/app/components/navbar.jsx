@@ -17,15 +17,16 @@ const Navbar = ({ isLoggedIn = false, adminOnly = false }) => {
       suppressHydrationWarning
     >
       <div className="container mx-auto flex items-center justify-between max-w-full">
-        <Link href="/" className="flex items-center gap-2">
+        <div className="flex items-center gap-2 select-none cursor-default" aria-label="Logo">
           <img
             src="/SO_logo.png"
             width={500}
             height={200}
             className={clsx('w-[250px] h-auto')}
             alt="Logo"
+            draggable={false}
           />
-        </Link>
+        </div>
 
         <button
           className="md:hidden flex flex-col justify-center items-center"
@@ -41,7 +42,7 @@ const Navbar = ({ isLoggedIn = false, adminOnly = false }) => {
           {!adminOnly && !isLoggedIn && (
             <li>
               <Link href="/" className="block px-4 py-2 text-white hover:text-yellow-500 font-bold tracking-wide transition-colors duration-200">
-                Welcome to Steel Doc
+                Welcome to Steel Vault
               </Link>
             </li>
           )}
@@ -49,25 +50,62 @@ const Navbar = ({ isLoggedIn = false, adminOnly = false }) => {
             <>
               <li>
                 <span className="block px-4 py-2 text-white font-bold tracking-wide">
-                  Welcome to Steel Doc
+                  Welcome to Steel Vault
                 </span>
               </li>
               <li>
                 <button
-                  onClick={() => signOut({ callbackUrl: "/" })}
+                  onClick={async () => {
+                    try {
+                      await signOut({ callbackUrl: "/" });
+                    } catch {
+                      // Fallback: hard redirect
+                      window.location.href = "/";
+                    }
+                  }}
                   className="block px-4 py-2 text-white hover:text-blue-300 font-bold rounded transition-colors duration-200"
                 >
                   Log Out
                 </button>
               </li>
               <li>
-                <Link href="/about" className="block px-4 py-2 text-white hover:text-blue-300 font-bold rounded transition-colors duration-200">
+                <button
+                  onClick={() => setMenuOpen(prev => prev || true) || document.getElementById('contact-modal')?.classList.remove('hidden')}
+                  className="block px-4 py-2 text-white hover:text-blue-300 font-bold rounded transition-colors duration-200"
+                >
                   Contact us
-                </Link>
+                </button>
               </li>
             </>
           )}
         </ul>
+      </div>
+      {/* Contact Modal */}
+      <div id="contact-modal" className="hidden fixed inset-0 z-[1000] bg-black/40 flex items-center justify-center">
+        <div className="bg-white rounded-md shadow-lg w-[90%] max-w-sm p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-lg font-semibold">Contact Us</h3>
+            <button
+              aria-label="Close contact"
+              className="text-gray-500 hover:text-gray-700"
+              onClick={() => document.getElementById('contact-modal')?.classList.add('hidden')}
+            >
+              ✕
+            </button>
+          </div>
+          <div className="space-y-2 text-sm">
+            <div className="font-medium">service@sol-mail.net</div>
+            <div className="font-medium">+1 (602) 563 5958</div>
+          </div>
+          <div className="mt-4 flex justify-end">
+            <button
+              className="px-4 py-1 rounded bg-cyan-800 text-white hover:bg-cyan-900"
+              onClick={() => document.getElementById('contact-modal')?.classList.add('hidden')}
+            >
+              Close
+            </button>
+          </div>
+        </div>
       </div>
     </nav>
   );

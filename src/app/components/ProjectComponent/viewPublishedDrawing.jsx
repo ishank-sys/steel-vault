@@ -24,7 +24,7 @@ const viewPublishedDrawing = () => {
     const fetchAll = async () => {
       try {
         const [logsRes, projectsRes, clientsRes] = await Promise.all([
-          fetch("/api/document-logs"),
+          fetch("/api/document-logs?scope=tl"),
           fetch("/api/projects"),
           fetch("/api/clients"),
         ]);
@@ -71,6 +71,32 @@ const viewPublishedDrawing = () => {
         headers={['S.No.', 'Client Name', 'Project Name', 'File Name', 'Upload Date', 'Upload Time']}
         keys={['slno', 'clientName', 'projectName', 'fileName', 'uploadDate', 'uploadTime']}
         data={filteredData}
+        customColumns={[
+          {
+            header: 'Link',
+            render: (row) => (
+              <button
+                className="text-blue-600 underline"
+                onClick={async () => {
+                  try {
+                    const res = await fetch(`/api/files/${row.id}/url`);
+                    if (!res.ok) {
+                      const err = await res.json().catch(() => ({}));
+                      alert(`Could not get download URL: ${err.error || res.statusText}`);
+                      return;
+                    }
+                    const { url } = await res.json();
+                    if (url) window.open(url, '_blank');
+                  } catch (e) {
+                    alert('Failed to open file');
+                  }
+                }}
+              >
+                Open
+              </button>
+            )
+          }
+        ]}
         //showActions={true}
         //actionHeaderText="View"
         //onView={(row) => console.log('View:', row)}
