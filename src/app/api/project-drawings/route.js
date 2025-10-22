@@ -172,7 +172,8 @@ export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
     const projectId = Number(searchParams.get('projectId'));
-    const packageId = searchParams.get('packageId') != null ? Number(searchParams.get('packageId')) : null;
+  const packageId = searchParams.get('packageId') != null ? Number(searchParams.get('packageId')) : null;
+  const hasFinitePackage = packageId != null && Number.isFinite(packageId);
     const drawingFilter = searchParams.get('drawing');
     if (!Number.isFinite(projectId)) {
       return NextResponse.json({ error: 'projectId is required' }, { status: 400 });
@@ -187,8 +188,8 @@ export async function GET(req) {
     const whereParts = [];
     const args = [];
     let idx = 1;
-    if (projectActual) { whereParts.push(`"${projectActual}" = $${idx++}`); args.push(projectId); }
-    if (packageId != null && packageActual) { whereParts.push(`"${packageActual}" = $${idx++}`); args.push(packageId); }
+  if (projectActual) { whereParts.push(`"${projectActual}" = $${idx++}`); args.push(projectId); }
+  if (hasFinitePackage && packageActual) { whereParts.push(`"${packageActual}" = $${idx++}`); args.push(packageId); }
     // Optional drawing equality filter on either drawingNumber or drgNo
     if (drawingFilter) {
       const drawingActual = lower.get('drawingnumber') || lower.get('drgno');
@@ -198,10 +199,24 @@ export async function GET(req) {
       }
     }
     const whereSql = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
-    const rows = await prisma.$queryRawUnsafe(
+    let rows = await prisma.$queryRawUnsafe(
       `SELECT * FROM "${table}" ${whereSql} ORDER BY ${drawingQuoted} ASC`,
       ...args
     );
+    // Fallback: if filtering by packageId yields no rows (legacy data may have NULL packageId), try project-only
+    if (Array.isArray(rows) && rows.length === 0 && hasFinitePackage && packageActual) {
+      try {
+        const whereParts2 = [];
+        const args2 = [];
+        let idx2 = 1;
+        if (projectActual) { whereParts2.push(`"${projectActual}" = $${idx2++}`); args2.push(projectId); }
+        const whereSql2 = whereParts2.length ? `WHERE ${whereParts2.join(' AND ')}` : '';
+        rows = await prisma.$queryRawUnsafe(
+          `SELECT * FROM "${table}" ${whereSql2} ORDER BY ${drawingQuoted} ASC`,
+          ...args2
+        );
+      } catch {}
+    }
     return NextResponse.json(serializeForJson(rows || []));
   } catch (e) {
     console.error('/api/project-drawings GET error:', e?.message || e);
@@ -307,8 +322,8 @@ export async function POST(req) {
         '"updatedAt" = NOW()'
       ];
       if (packageQuoted) {
-        // ensure packageId gets updated on conflict when provided
-        updateSets.splice(3, 0, `${packageQuoted} = COALESCE(EXCLUDED.${packageQuoted}, ${packageQuoted})`);
+        // ensure packageId gets updated on conflict when provided; fully-qualify target column to avoid ambiguity
+        updateSets.splice(3, 0, `${packageQuoted} = COALESCE(EXCLUDED.${packageQuoted}, "${table}".${packageQuoted})`);
       }
       const sql = `INSERT INTO "${table}" (${cols.join(', ')})
                    VALUES (${castedParams.join(', ')})

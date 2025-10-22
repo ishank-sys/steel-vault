@@ -469,6 +469,95 @@ const handleDownload = async () => {
     type: "application/octet-stream",
   });
 
+  // --- Persist selected drawing filenames to ProjectDrawing (so SQL has latest fileName) ---
+  try {
+    // Resolve numeric clientId
+    const clientIdNum = selectedClientId != null && /^\d+$/.test(String(selectedClientId))
+      ? Number(selectedClientId)
+      : null;
+    // Resolve numeric projectId (prefer selectedProjectId; fallback by matching projectNo)
+    let projectIdNum = selectedProjectId != null && /^\d+$/.test(String(selectedProjectId))
+      ? Number(selectedProjectId)
+      : null;
+    if (!projectIdNum) {
+      try {
+        const pres = await fetch('/api/projects', { method: 'GET', headers: { 'Content-Type': 'application/json' } });
+        if (pres.ok) {
+          const pj = await pres.json();
+          const found = (pj || []).find(p =>
+            String(p.projectNo) === String(projectNo) ||
+            String(p.name) === String(projectNo) ||
+            String(p.projectName) === String(projectNo) ||
+            String(p.id) === String(projectNo)
+          );
+          if (found) projectIdNum = Number(found.id);
+        }
+      } catch {}
+    }
+
+    // Helper: normalize category like TL screen
+    const normalizeCategory = (cat) => {
+      const c = String(cat || '').trim().toUpperCase();
+      if (!c) return '';
+      if (c === 'A' || c === 'G' || c === 'W') return c;
+      if (c.startsWith('SHOP') || c === 'S') return 'A';
+      if (c.startsWith('ERECTION') || c === 'E' || c === 'GA' || c.includes('GENERAL')) return 'G';
+      if (c.includes('PART') || c.includes('COMPONENT') || c === 'P') return 'W';
+      return c[0] || '';
+    };
+
+    // Helper: resolve packageId from API if not numeric
+    const resolvePackageId = async (projId) => {
+      // If store already has a numeric ID, use it
+      if (selectedPackageId != null && /^\d+$/.test(String(selectedPackageId))) {
+        return Number(selectedPackageId);
+      }
+      // Otherwise try to find by name/number for this project
+      if (!projId) return undefined;
+      try {
+        const resp = await fetch(`/api/packages?projectId=${Number(projId)}`, { cache: 'no-store' });
+        if (!resp.ok) return undefined;
+        const list = await resp.json();
+        const needle = String(selectedPackageName || '').trim().toLowerCase();
+        if (!needle) return undefined;
+        const match = (list || []).find(p => {
+          const nm = String(p?.name || '').trim().toLowerCase();
+          const pn = String(p?.packageNumber || '').trim().toLowerCase();
+          return (nm && nm === needle) || (pn && pn === needle);
+        });
+        return match?.id != null ? Number(match.id) : undefined;
+      } catch {
+        return undefined;
+      }
+    };
+
+    // Build entries from the on-screen table (ALL rows, not just with attachments)
+    let entriesToUpsert = (tableDrawings || [])
+      .map(d => ({
+        drawingNumber: d.drawingNo || d.drgNo || '',
+        category: normalizeCategory(d.category || ''),
+        revision: d.rev || null,
+        fileNames: (d.attachedPdfs || []).map(f => f?.name || f?.file?.name || '').filter(Boolean),
+        issueDate: new Date().toISOString().slice(0,10),
+      }))
+      .filter(e => e.drawingNumber);
+
+    if (clientIdNum && projectIdNum && entriesToUpsert.length > 0) {
+      const pkgIdNum = await resolvePackageId(projectIdNum);
+      // Fire-and-forget; don't block the download if this fails
+      fetch('/api/project-drawings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId: clientIdNum,
+          projectId: projectIdNum,
+          packageId: pkgIdNum,
+          entries: entriesToUpsert,
+        })
+      }).catch(() => {});
+    }
+  } catch {}
+
   // --- ZIP LOGIC ---
   const zip = new JSZip();
   const rootFolder = zip.folder("Drawing");
@@ -545,7 +634,7 @@ const handlePublish = async () => {
       throw new Error(`Unable to determine project ID from "${projectNo}".`);
     }
 
-    // Confirm project & package before proceeding
+  // Confirm project & package before proceeding
     const pkgDisplay = selectedPackageName || (selectedPackageId != null ? `#${selectedPackageId}` : 'None');
     const confirmed = window.confirm(`Confirm publish to:\n- Project: ${projectName} (ID ${projectIdToSend})\n- Package: ${pkgDisplay}\n\nProceed?`);
     if (!confirmed) { setIsPublishing(false); return; }
@@ -573,9 +662,8 @@ const handlePublish = async () => {
       return { normDr, normCat, key: `${normDr}::${normCat}` };
     };
 
-    // Build entries for upsert (insert when new, update when exists)
-    const entriesToUpsert = (selectedDrawings || [])
-      .filter(d => Array.isArray(d.attachedPdfs) && d.attachedPdfs.length > 0)
+    // Build entries for upsert from the on-screen table (ALL rows, not only with attachments)
+    const entriesToUpsert = (tableDrawings || [])
       .map(d => {
         const drawingNumber = d.drawingNo || d.drgNo || d.drawingNo || '';
         const category = normalizeCategory(d.category || '');
@@ -585,11 +673,31 @@ const handlePublish = async () => {
           drawingNumber: drawingToSend,
           category,
           revision: d.rev || null,
-          fileNames: (d.attachedPdfs || []).map(f => f.name || f.file?.name || ''),
+          fileNames: (d.attachedPdfs || []).map(f => f.name || f.file?.name || '').filter(Boolean),
           issueDate: new Date().toISOString().slice(0,10),
         };
       })
       .filter(e => e.drawingNumber);
+
+    // Resolve numeric package id reliably (by id or by name via /api/packages)
+    const resolvePackageId = async (projId) => {
+      if (selectedPackageId != null && /^\d+$/.test(String(selectedPackageId))) return Number(selectedPackageId);
+      if (!projId) return undefined;
+      try {
+        const resp = await fetch(`/api/packages?projectId=${Number(projId)}`, { cache: 'no-store' });
+        if (!resp.ok) return undefined;
+        const list = await resp.json();
+        const needle = String(selectedPackageName || '').trim().toLowerCase();
+        if (!needle) return undefined;
+        const match = (list || []).find(p => {
+          const nm = String(p?.name || '').trim().toLowerCase();
+          const pn = String(p?.packageNumber || '').trim().toLowerCase();
+          return (nm && nm === needle) || (pn && pn === needle);
+        });
+        return match?.id != null ? Number(match.id) : undefined;
+      } catch { return undefined; }
+    };
+    const pkgIdResolved = await resolvePackageId(projectIdToSend);
 
     if (entriesToUpsert.length > 0) {
       const up = await fetch('/api/project-drawings', {
@@ -598,13 +706,14 @@ const handlePublish = async () => {
         body: JSON.stringify({
           clientId: Number(clientId),
           projectId: Number(projectIdToSend),
-          packageId: selectedPackageId != null ? Number(selectedPackageId) : undefined,
+          packageId: pkgIdResolved,
           entries: entriesToUpsert,
         })
       });
       const upJson = await up.json().catch(() => ({}));
       if (!up.ok) {
         console.warn('ProjectDrawing upsert failed', up.status, upJson);
+        alert(`Failed to save drawings to ProjectDrawing: ${upJson?.error || up.statusText}`);
       } else {
         console.log('ProjectDrawing upserts:', upJson);
       }
@@ -612,7 +721,7 @@ const handlePublish = async () => {
       console.log('No drawings with files selected to publish; skipping DB upsert.');
     }
 
-    // Create PDF + Excel + ZIP (same as download) and upload
+    // Create PDF + Excel + ZIP (same as download) and then upload via /api/upload (multipart)
     const doc = new jsPDF('p', 'pt', 'a4');
     let y = 40;
     doc.setFontSize(14);
@@ -681,16 +790,19 @@ const handlePublish = async () => {
     zip.file(`${zipName || 'Transmittal'}.pdf`, pdfBlob);
     zip.file(`${zipName || 'Transmittal'}.xlsx`, excelBlob);
 
-  const content = await zip.generateAsync({ type: "blob" });
-  const zipFileName = `${zipName || 'Transmittal'}.zip`;
-  const zipFile = new File([content], zipFileName, { type: 'application/zip' });
+    const content = await zip.generateAsync({ type: "blob" });
+    const zipFileName = `${zipName || 'Transmittal'}.zip`;
+    const zipFile = new File([content], zipFileName, { type: 'application/zip' });
+
+    // Upload to GCS using signed URL; then log via /api/upload (JSON)
     const res = await uploadToGCSDirect(zipFile, {
       clientId: Number(clientId),
       projectId: Number(projectIdToSend),
-      packageId: selectedPackageId || undefined,
+      packageId: pkgIdResolved || undefined,
       packageName: selectedPackageName || undefined,
       onProgress: setUploadProgress,
     });
+
     const summary = {
       name: zipFileName,
       clientId: Number(clientId),
@@ -700,11 +812,10 @@ const handlePublish = async () => {
     setPublishResult({ success: true, data: res, summary });
     setShowPublishModal(true);
 
-    // Send notification email if recipients provided
+    // Optional email notification
     const recipients = String(toEmails || '').trim();
     if (recipients) {
       try {
-        // Resolve client name for email metadata
         let clientNameSafe = undefined;
         try {
           const cres = await fetch('/api/clients', { cache: 'no-store' });
@@ -744,7 +855,6 @@ const handlePublish = async () => {
         alert(`Failed to send email: ${msg}`);
       }
     }
-
   } catch (e) {
     console.error('Publish failed:', e);
     let errorMessage = e?.message || String(e);
@@ -928,7 +1038,14 @@ const handlePublish = async () => {
           {isPublishing ? 'Publishing...' : 'Publish'}
         </button>
         <button className="bg-teal-800 text-white px-4 py-2 rounded text-sm hover:bg-teal-900">Save</button>
-        <button className="bg-teal-800 text-white px-4 py-2 rounded text-sm hover:bg-teal-900" onClick={handleDownload}>Download</button>
+        <button
+          className="bg-teal-800 text-white px-4 py-2 rounded text-sm hover:bg-teal-900 disabled:opacity-50 disabled:cursor-not-allowed"
+          onClick={handleDownload}
+          disabled={!tableDrawings.some(d => Array.isArray(d.attachedPdfs) && d.attachedPdfs.length > 0)}
+          title={!tableDrawings.some(d => Array.isArray(d.attachedPdfs) && d.attachedPdfs.length > 0) ? 'Attach at least one PDF drawing first' : undefined}
+        >
+          Download
+        </button>
         <button className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700" onClick={() => router.push("/dashboard/project/project/publish_drawings/hybrid_publish_drawings")}>Back For Correction</button>
       </div>
 

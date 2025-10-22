@@ -25,6 +25,10 @@ export const metadata = {
     shortcut: ["/favicon.ico"],
   },
   manifest: "/site.webmanifest",
+};
+
+// Move themeColor to viewport per Next.js guidance
+export const viewport = {
   themeColor: "#ffffff",
 };
 

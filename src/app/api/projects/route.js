@@ -190,35 +190,41 @@ export async function POST(req) {
       return NextResponse.json({ error: 'clientId is required' }, { status: 400 });
     }
 
-    const project = await prisma.project.create({
-      data: {
-        projectNo: generateProjectNo(),
-        name: body.projectName,
-        description: body.description || null,
-        clientId: Number(body.clientId),
-        solTLId: body.solTLId ? Number(body.solTLId) : null,
-        estimationDate: body.estimationDate ? new Date(body.estimationDate) : null,
-        startDate: body.startDate ? new Date(body.startDate) : null,
-        endDate: body.endDate ? new Date(body.endDate) : null,
-        expectedCompletion: body.expectedCompletion ? new Date(body.expectedCompletion) : null,
-        totalProjectHours: body.totalProjectHours || null,
-        actualProjectHours: body.actualProjectHours || null,
-        totalSheetQty: body.totalSheetQty || null,
-        totalDays: body.totalDays ? Number(body.totalDays) : null,
-        projectType: body.projectType || null,
-        projectSubType: body.projectSubType || null,
-        weightTonnage: body.weightTonnage || null,
-        projectComplexity: body.projectComplexity || null,
-        solJobNo: body.solJobNo || null,
-        jobName: body.jobName || null,
-        branch: body.branch || null,
-        priority: body.priority || undefined, // let default apply if not provided
-        status: body.status || undefined,     // let default apply if not provided
-        progress: body.progress !== undefined ? body.progress : undefined, // default 0.0
-        projectDataFolder: body.projectDataFolder || null,
-        estimationRows: Array.isArray(body.estimationRows) ? body.estimationRows : [],
-      }
-    });
+    // Introspect Project columns to avoid inserting into non-existent columns
+    const cols = await prisma.$queryRaw`SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'Project'`;
+    const colSet = new Set((cols || []).map((r) => r.column_name || r.column_Name || r.COLUMN_NAME));
+
+    const data = {
+      name: body.projectName,
+      description: body.description || null,
+      clientId: Number(body.clientId),
+      solTLId: body.solTLId ? Number(body.solTLId) : null,
+      estimationDate: body.estimationDate ? new Date(body.estimationDate) : null,
+      startDate: body.startDate ? new Date(body.startDate) : null,
+      endDate: body.endDate ? new Date(body.endDate) : null,
+      expectedCompletion: body.expectedCompletion ? new Date(body.expectedCompletion) : null,
+      totalProjectHours: body.totalProjectHours || null,
+      actualProjectHours: body.actualProjectHours || null,
+      totalSheetQty: body.totalSheetQty || null,
+      totalDays: body.totalDays ? Number(body.totalDays) : null,
+      projectType: body.projectType || null,
+      projectSubType: body.projectSubType || null,
+      weightTonnage: body.weightTonnage || null,
+      projectComplexity: body.projectComplexity || null,
+      solJobNo: body.solJobNo || null,
+      jobName: body.jobName || null,
+      branch: body.branch || null,
+      priority: body.priority || undefined, // let default apply if not provided
+      status: body.status || undefined,     // let default apply if not provided
+      progress: body.progress !== undefined ? body.progress : undefined, // default 0.0
+      projectDataFolder: body.projectDataFolder || null,
+      estimationRows: Array.isArray(body.estimationRows) ? body.estimationRows : [],
+    };
+    if (colSet.has('projectNo')) {
+      data.projectNo = generateProjectNo();
+    }
+
+    const project = await prisma.project.create({ data });
 
     // Increment denormalized client stats (best-effort; ignore errors silently)
     const ACTIVE_STATUSES = new Set(['Live', 'PLANNING', 'IN_PROGRESS']);

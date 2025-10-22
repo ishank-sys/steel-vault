@@ -99,77 +99,84 @@ export async function POST(req) {
       return NextResponse.json({ error: process.env.NODE_ENV !== 'production' ? `Failed to log upload: ${msg}${extra.length ? ' | ' + extra.join(' | ') : ''}` : 'Failed to log upload' }, { status: 500 });
     }
 
-  // Also upsert into ProjectDrawing so filenames appear in Supabase for the project
-    try {
-      // Derive a drawing number from the file name (strip extension)
-      const drawingBase = String(originalName).replace(/\.[^/.]+$/, '').trim() || String(originalName);
-      // Infer a loose category from the path if available; default to empty string
-      let inferredCategory = '';
-      if (/design-drawings\//i.test(normalizedPath)) inferredCategory = 'A';
-      else if (/3d-models\//i.test(normalizedPath)) inferredCategory = 'MODEL';
-      else if (/extras\//i.test(normalizedPath)) inferredCategory = 'EXTRA';
+    // Also upsert into ProjectDrawing so filenames appear in the DB for the project
+    // Prefer the internal /api/project-drawings endpoint (handles schema drift and packageId)
+    // If that fails, do a minimal Prisma upsert without packageId
+    // Derive a drawing number from the file name (strip extension)
+    const drawingBase = String(originalName).replace(/\.[^\/.]+$/, '').trim() || String(originalName);
+    // Infer a loose category from the path if available; default to empty string
+    let inferredCategory = '';
+    if (/design-drawings\//i.test(normalizedPath)) inferredCategory = 'A';
+    else if (/3d-models\//i.test(normalizedPath)) inferredCategory = 'MODEL';
+    else if (/extras\//i.test(normalizedPath)) inferredCategory = 'EXTRA';
 
-      await prisma.projectDrawing.upsert({
-        where: {
-          projectId_drgNo_category: {
+    let pdLogged = false;
+    try {
+      const origin = req.headers.get('origin') || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+      const resp = await fetch(`${origin}/api/project-drawings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId: cleanClientId,
+          projectId: cleanProjectId,
+          packageId: cleanPackageId ?? undefined,
+          entries: [{
+            drawingNumber: drawingBase,
+            category: inferredCategory,
+            revision: null,
+            fileNames: [originalName],
+            issueDate: new Date().toISOString().slice(0,10),
+          }]
+        })
+      });
+      pdLogged = resp.ok;
+      if (!resp.ok) {
+        const t = await resp.text().catch(() => '');
+        console.warn('[upload] /api/project-drawings returned', resp.status, t);
+      }
+    } catch (fallbackErr) {
+      console.warn('[upload] call to /api/project-drawings failed:', fallbackErr?.message || fallbackErr);
+    }
+    if (!pdLogged) {
+      try {
+        await prisma.projectDrawing.upsert({
+          where: {
+            projectId_drgNo_category: {
+              projectId: cleanProjectId,
+              drgNo: drawingBase,
+              category: inferredCategory,
+            },
+          },
+          update: {
+            fileName: originalName,
+            lastAttachedAt: new Date(),
+            meta: {
+              fileNames: [originalName],
+              storagePath: normalizedPath,
+              size: normSize,
+              source: 'upload-api',
+              logType: logType || 'EMPLOYEE_UPLOAD',
+            },
+          },
+          create: {
+            clientId: cleanClientId,
             projectId: cleanProjectId,
             drgNo: drawingBase,
             category: inferredCategory,
-          },
-        },
-        update: {
-          fileName: originalName,
-          lastAttachedAt: new Date(),
-          meta: {
-            fileNames: [originalName],
-            storagePath: normalizedPath,
-            size: normSize,
-            source: 'upload-api',
-            logType: logType || 'EMPLOYEE_UPLOAD',
-          },
-          ...(cleanPackageId != null ? { /* @ts-ignore */ packageId: cleanPackageId } : {}),
-        },
-        create: {
-          clientId: cleanClientId,
-          projectId: cleanProjectId,
-          drgNo: drawingBase,
-          category: inferredCategory,
-          fileName: originalName,
-          lastAttachedAt: new Date(),
-          meta: {
-            fileNames: [originalName],
-            storagePath: normalizedPath,
-            size: normSize,
-            source: 'upload-api',
-            logType: logType || 'EMPLOYEE_UPLOAD',
-          },
-          ...(cleanPackageId != null ? { /* @ts-ignore */ packageId: cleanPackageId } : {}),
-        },
-      });
-    } catch (e) {
-      console.warn('[upload] ProjectDrawing upsert failed, attempting API fallback:', e?.message || e);
-      try {
-        const origin = req.headers.get('origin') || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
-        await fetch(`${origin}/api/project-drawings`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            clientId: cleanClientId,
-            projectId: cleanProjectId,
-            packageId: cleanPackageId ?? undefined,
-            entries: [{
-              drawingNumber: drawingBase,
-              category: inferredCategory,
-              revision: null,
+            fileName: originalName,
+            lastAttachedAt: new Date(),
+            meta: {
               fileNames: [originalName],
-              issueDate: new Date().toISOString().slice(0,10),
-            }]
-          })
+              storagePath: normalizedPath,
+              size: normSize,
+              source: 'upload-api',
+              logType: logType || 'EMPLOYEE_UPLOAD',
+            },
+          },
         });
-      } catch (fallbackErr) {
-        console.warn('[upload] Fallback /api/project-drawings failed:', fallbackErr?.message || fallbackErr);
+      } catch (e) {
+        console.warn('[upload] Prisma ProjectDrawing upsert (minimal) failed:', e?.message || e);
       }
-      // Do not fail the whole request if ProjectDrawing update fails
     }
 
     // Optional: maintain separate upload table if present

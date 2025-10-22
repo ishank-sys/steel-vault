@@ -176,19 +176,18 @@ export default function Sidebar({ initialUserType = null }) {
       {/* Project Section */}
       {canShow('Project') && (
         <CollapsibleGroup label="Project" defaultOpen={defaultOpenFor('Project')}>
-          <CollapsibleGroup label="Project">
+          
+          {/* Project-specific actions 
             <SidebarItem
               label="Project Creation"
               href="/dashboard/project/project/project_estimation"
             />
+            */}
             <SidebarItem
               label="View Project Summary"
               href="/dashboard/project/project/view_project_summary"
             />
-            <SidebarItem
-              label="View Drawing Details"
-              href="/dashboard/project/project/view_drawing_details"
-            /> 
+             
             <SidebarItem
               label="View Published Drawings"
               href="/dashboard/project/project/view_published_drawings"
@@ -197,23 +196,10 @@ export default function Sidebar({ initialUserType = null }) {
               label="Publish Drawings"
               href="/dashboard/project/project/publish_drawings"
             />
-            <SidebarItem
-              label="Send Drawings Submittal"
-              href="src/app/components/ProjectComponent/SendDrawingsSubmittals.jsx"
-            />
             
-          </CollapsibleGroup>
+          
 
-          <CollapsibleGroup label="Item">
-            <SidebarItem
-              label="Add Item Code"
-              href="/dashboard/project/item/add_item_code"
-            />
-            <SidebarItem
-              label="View Code List"
-              href="/dashboard/project/item/view_code_list"
-            />
-          </CollapsibleGroup>
+         
         </CollapsibleGroup>
       )}
     </aside>

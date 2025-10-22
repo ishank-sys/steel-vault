@@ -7,6 +7,8 @@ const useDrawingStore = create((set, get) => ({
   selectedClientId: null,
   selectedProjectId: null, // added for compatibility with PublishDrawing component
   selectedPackage: null,   // holds the currently selected package object
+  selectedPackageId: null, // normalized numeric package id (from ProjectPackage.id)
+  selectedPackageName: '', // human-friendly package label (name or packageNumber)
   approvedDrawings: [],
   approvedExtras: [],
   approvedModels: [],
@@ -29,7 +31,15 @@ const useDrawingStore = create((set, get) => ({
   setProjectDetails: (name, no) => set({ projectName: name, projectNo: no }),
   setSelectedClientId: (clientId) => set({ selectedClientId: clientId }),
   setSelectedProjectId: (projectId) => set({ selectedProjectId: projectId }),
-  setSelectedPackage: (pkg) => set({ selectedPackage: pkg }),
+  setSelectedPackage: (pkg) => set({
+    selectedPackage: pkg || null,
+    selectedPackageId: pkg?.id != null ? Number(pkg.id) : null,
+    selectedPackageName: (pkg?.name || pkg?.packageNumber || '').toString(),
+  }),
+  setSelectedPackageMeta: (id, name) => set({
+    selectedPackageId: id != null ? Number(id) : null,
+    selectedPackageName: (name || '').toString(),
+  }),
   setApprovedDrawings: (drawings) => set({ approvedDrawings: drawings }),
   setApprovedExtras: (extras) => set({ approvedExtras: extras }),
   setApprovedModels: (models) => set({ approvedModels: models }),

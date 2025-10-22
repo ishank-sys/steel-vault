@@ -133,25 +133,31 @@ const getLeadingToken = (name) => {
   return base.slice(start, end).trim();
 };
 
+// Attach-conflict rule: use the LAST ALPHABET in the filename as the revision
 const extractRevisionFromFileName = (fileName) => {
   if (!fileName) return null;
   const base = fileName.replace(/\.pdf$/i, "");
-  const endNumberMatch = base.match(/(\d+)$/);
-  if (endNumberMatch) return endNumberMatch[1];
-  const endLetterMatch = base.match(/([A-Za-z])$/);
-  if (endLetterMatch) return endLetterMatch[1].toLowerCase();
-  const parenMatch = base.match(/\(([^)]+)\)$/);
-  if (parenMatch) return parenMatch[1];
-  const dashMatch = base.match(/[-_]([A-Za-z]?\d+)$/);
-  if (dashMatch) return dashMatch[1];
-  return null;
+  // Scan from end to find the last alphabet character
+  for (let i = base.length - 1; i >= 0; i--) {
+    const ch = base[i];
+    if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z')) return ch.toUpperCase(); // single last alphabet
+  }
+  return null; // no digit found
 };
 
+// Compare Excel rev (cell) to the last alphabet from filename; only this rule affects attach conflict
 const checkRevisionMatch = (drawingRev, fileName) => {
-  // Deprecated for conflict purposes: we no longer compare against filename revisions.
-  // Keep returning true to avoid marking conflicts from filenames.
-  return true;
+  const revCellRaw = (drawingRev ?? '').toString().trim();
+  const revCell = revCellRaw === '-' ? '' : revCellRaw;
+  const lastAlpha = extractRevisionFromFileName(fileName);
+  // If neither has a revision, it's fine
+  if (!revCell && lastAlpha == null) return true;
+  // If one is missing, mismatch
+  if (!!revCell !== (lastAlpha != null)) return false;
+  // Case-insensitive letter compare (Excel rev may be letter)
+  return String(revCell).trim().toUpperCase() === String(lastAlpha).trim().toUpperCase();
 };
+
 
 // Signed URL helper from Code #1 (present here, but **not used** on this page for Extras/3D)
 const uploadFileToS3 = async (file, { projectId = null, clientId = null } = {}) => {
@@ -247,10 +253,12 @@ const PublishDrawing = () => {
       if (!selectedProjectId || !selectedPackageId) { setPrevRevMap({}); setPrevRevError(''); setPrevRevHasFetched(false); return; }
       setPrevRevLoading(true); setPrevRevError(''); setPrevRevHasFetched(false);
       try {
-  const url = `/api/project-drawings?projectId=${Number(selectedProjectId)}&packageId=${Number(selectedPackageId)}`;
+        const url = `/api/project-drawings?projectId=${Number(selectedProjectId)}&packageId=${Number(selectedPackageId)}`;
         const r = await fetch(url, { cache: 'no-store' });
         if (!r.ok) throw new Error(`Failed to load prev revisions (${r.status})`);
         const arr = await r.json();
+        // Keep full rows for modal and to enrich prevRevMap
+        if (!cancelled) setPrevRows(Array.isArray(arr) ? arr : []);
         const map = {};
         if (Array.isArray(arr)) {
           // Choose latest by updatedAt or lastAttachedAt
@@ -269,6 +277,33 @@ const PublishDrawing = () => {
               const prev2 = map[keyNoCat];
               if (!prev2 || ts > prev2._ts) {
                 map[keyNoCat] = { rev: revVal, _ts: ts };
+              }
+              // filename-based mapping (from metadata/meta.fileNames or fileName list)
+              const collectNames = () => {
+                const acc = [];
+                const md = row?.metadata;
+                if (md) {
+                  try {
+                    const obj = typeof md === 'string' ? JSON.parse(md) : md;
+                    if (obj && Array.isArray(obj.fileNames)) acc.push(...obj.fileNames);
+                  } catch {}
+                }
+                const m2 = row?.meta;
+                if (m2) {
+                  try {
+                    const obj2 = typeof m2 === 'string' ? JSON.parse(m2) : m2;
+                    if (obj2 && Array.isArray(obj2.fileNames)) acc.push(...obj2.fileNames);
+                  } catch {}
+                }
+                const fn = row?.fileName;
+                if (typeof fn === 'string' && fn.trim()) acc.push(...fn.split(/\s*,\s*/).filter(Boolean));
+                return acc;
+              };
+              const fns = collectNames();
+              for (const name of fns) {
+                const k = `file::${String(name).trim().toLowerCase()}`;
+                const prevF = map[k];
+                if (!prevF || ts > prevF._ts) map[k] = { rev: revVal, _ts: ts };
               }
             }
           }
@@ -662,6 +697,17 @@ const PublishDrawing = () => {
     })();
   }, [selectedClientId, baseProjects]);
 
+  // Keep global store's selectedPackage in sync with local selection and loaded packages
+  React.useEffect(() => {
+    // When a package is selected locally, propagate the full object to the store
+    if (selectedPackageId) {
+      const pkg = (packages || []).find(p => String(p.id) === String(selectedPackageId));
+      setSelectedPackage(pkg || null);
+    } else {
+      setSelectedPackage(null);
+    }
+  }, [selectedPackageId, packages, setSelectedPackage]);
+
   /* ====== Extras / 3D: stage locally ONLY (no cloud here) ====== */
   const handleFileChange = useCallback((e, type) => {
     if (!useDrawingStore.getState().projectNo) return alert("Please select a Project No. first.");
@@ -945,6 +991,16 @@ const PublishDrawing = () => {
         if (idx >= 0) {
           const row = updatedDrawings[idx];
           row.attachedPdfs = [file]; // enforce single PDF per drawing: latest wins
+          // Validate revision in filename vs Excel Rev cell
+          try {
+            const ok = checkRevisionMatch(row?.rev ?? '', file.name);
+            if (!ok) {
+              const fnRev = extractRevisionFromFileName(file.name);
+              row.attachConflict = `Filename rev '${fnRev ?? '-'}' does not match Rev cell '${(row?.rev ?? '-')}'`;
+            } else {
+              row.attachConflict = '';
+            }
+          } catch {}
           matchedFiles.push(file);
           // Collect entry for immediate DB logging
           const dNo = row?.drgNo || row?.drawingNo || '';
@@ -1084,21 +1140,27 @@ const PublishDrawing = () => {
 
   /* ====== Approve ====== */
   const handleSubmit = useCallback(() => {
-    if (!useDrawingStore.getState().projectNo || !useDrawingStore.getState().projectName) {
+    const st = useDrawingStore.getState();
+    if (!st.projectNo || !st.projectName) {
       alert("Please select a project first.");
       return;
     }
-    const selectedDrawings = drawings.filter((d) => selectedRows.has(d.id));
+    // If nothing is explicitly selected, default to all items to keep UX flowing
+    const selectedDrawings = selectedRows.size > 0
+      ? drawings.filter((d) => selectedRows.has(d.id))
+      : safeArr(drawings);
     const allAttachments = [...safeArr(extras), ...safeArr(models)];
-    const selectedAttachments = allAttachments.filter((a) => selectedAttachmentRows.has(a.id));
+    const selectedAttachments = selectedAttachmentRows.size > 0
+      ? allAttachments.filter((a) => selectedAttachmentRows.has(a.id))
+      : allAttachments;
     const selectedExtras = selectedAttachments.filter(a => a.fileType === 'Extras' || a.fileType === 'Extra');
     const selectedModels = selectedAttachments.filter(a => a.fileType === '3D Model');
 
-    if (selectedDrawings.length + selectedExtras.length + selectedModels.length === 0) {
-      alert("Please select at least one item (Drawing/Extra/3D Model) to approve.");
+    if (safeArr(selectedDrawings).length + safeArr(selectedExtras).length + safeArr(selectedModels).length === 0) {
+      alert("No drawings or attachments available to approve.");
       return;
     }
-    setProjectDetails(useDrawingStore.getState().projectName, useDrawingStore.getState().projectNo);
+    setProjectDetails(st.projectName, st.projectNo);
     setApprovedDrawings(selectedDrawings);
     setApprovedExtras(selectedExtras);
     setApprovedModels(selectedModels);
@@ -1292,15 +1354,27 @@ const PublishDrawing = () => {
           <tbody>
             {viewFiles.map((file, index) => {
               const hasRevisionConflict = isDrawing && revisionConflicts.has(file?.id);
+              const hasAttachConflict = isDrawing && !!String(file?.attachConflict || '').trim();
               const revMessage = isDrawing ? (revisionConflicts.get(file?.id) || '') : '';
-              // Resolve prev revision for this drawing+category
-              const dr = isDrawing ? (file?.drgNo ?? file?.drawingNo ?? '-') : '-';
-              const catKeyRaw = file?.category ?? '';
-              const { normDr, normCat } = normalizeDrawingKey(dr, catKeyRaw);
-              const prevRev = prevRevMap[`${normDr}::${normCat}`] ?? prevRevMap[normDr] ?? '';
+              // Resolve prev revision: prefer filename-based match; fallback to drawing+category
+              let prevRev = '';
+              const firstPdfName = (Array.isArray(file?.attachedPdfs) && file.attachedPdfs.length > 0) ? (file.attachedPdfs[0]?.name) : null;
+              if (firstPdfName) {
+                const fnameKey = `file::${String(firstPdfName).trim().toLowerCase()}`;
+                prevRev = prevRevMap[fnameKey] ?? '';
+              }
+              if (!prevRev) {
+                const dr = isDrawing ? (file?.drgNo ?? file?.drawingNo ?? '-') : '-';
+                const catKeyRaw = file?.category ?? '';
+                const { normDr, normCat } = normalizeDrawingKey(dr, catKeyRaw);
+                prevRev = prevRevMap[`${normDr}::${normCat}`] ?? prevRevMap[normDr] ?? '';
+              }
 
               return (
-                <tr key={file.id || `${file.name}-${index}`} className={`text-center text-sm ${hasRevisionConflict ? 'bg-yellow-100' : ''}`}>
+                <tr
+                  key={file.id || `${file.name}-${index}`}
+                  className={`text-center text-sm ${hasAttachConflict ? 'bg-red-100' : (hasRevisionConflict ? 'bg-yellow-100' : '')}`}
+                >
                   <td className="border px-2 py-1">{isDrawing ? (index + 1) : (file.slno || index + 1)}</td>
                   {((isDrawing && isParsed) || (!isDrawing && selection && onCheck)) && (
                     <td className="border px-2 py-1">
@@ -1321,7 +1395,7 @@ const PublishDrawing = () => {
                       <td className="border px-2 py-1">{isParsed ? file.drgNo : file.name}</td>
                       <td className="border px-2 py-1">{file.item || "-"}</td>
                       <td className="border px-2 py-1">{file.rev === "0" ? "0" : (file.rev || "-")}</td>
-                      <td className="border px-2 py-1">{prevRev || (prevRevLoading ? '...' : '-')}</td>
+                      <td className="border px-2 py-1">{prevRev || (prevRevLoading ? '...' : 'NA')}</td>
                       <td className="border px-2 py-1">{file.modeler || "-"}</td>
                       <td className="border px-2 py-1">{file.detailer || "-"}</td>
                       <td className="border px-2 py-1">{file.checker || "-"}</td>
@@ -1644,6 +1718,8 @@ const PublishDrawing = () => {
                 (Missing: {attachmentStats.missing})
               </span>
             </div>
+
+            {/* Previous submissions modal only; inline section removed */}
 
             {renderTable(drawings, true, selectedRows, setSelectedRows)}
             {selectedRows.size > 0 && (
