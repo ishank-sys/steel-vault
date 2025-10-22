@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma.js';
+import { Prisma } from '@prisma/client';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -238,11 +239,11 @@ export async function POST(req) {
       return NextResponse.json({ error: 'entries array is required' }, { status: 400 });
     }
 
-  const table = await getTargetTable();
-  await ensureTable(table);
+    const table = await getTargetTable();
+    await ensureTable(table);
 
-  const nowIso = new Date().toISOString();
-    let upserts = 0;
+    const nowIso = new Date().toISOString();
+    const today = new Date().toISOString().slice(0, 10);
     const { lower } = await getColumnsMap(table);
     const drawingActual = lower.get('drawingnumber') || lower.get('drgno') || 'drawingNumber';
     const drawingQuoted = `"${drawingActual}"`;
@@ -250,161 +251,141 @@ export async function POST(req) {
     const clientActual = lower.get('clientid') || lower.get('client_id');
     const projectActual = lower.get('projectid') || lower.get('project_id');
     const packageActual = lower.get('packageid') || lower.get('package_id');
-    const statusActual = lower.get('status');
     const metadataActual = lower.get('metadata');
-    const filePathActual = lower.get('filepath') || lower.get('file_path');
     const titleActual = lower.get('title');
+    const statusActual = lower.get('status');
     const clientQuoted = clientActual ? `"${clientActual}"` : null;
     const projectQuoted = projectActual ? `"${projectActual}"` : null;
     const packageQuoted = packageActual ? `"${packageActual}"` : null;
-    const statusQuoted = statusActual ? `"${statusActual}"` : null;
     const metadataQuoted = metadataActual ? `"${metadataActual}"` : null;
-    const filePathQuoted = filePathActual ? `"${filePathActual}"` : null;
     const titleQuoted = titleActual ? `"${titleActual}"` : null;
+    const statusQuoted = statusActual ? `"${statusActual}"` : null;
+
+    // Prepare a consistent insert column list
+    const insertColsRaw = [
+      clientQuoted,
+      projectQuoted,
+      packageQuoted, // may be null; we'll still include and pass null values
+      drawingQuoted,
+      catQuoted,
+      titleQuoted,   // optional
+      'revision',
+      '"issueDate"',
+      '"fileName"',
+      ...(lower.get('drgno') ? ['"drgNo"'] : []),
+      statusQuoted,  // optional
+      metadataQuoted, // optional
+      'meta',
+      '"lastAttachedAt"',
+      '"clientRowId"'
+    ].filter(Boolean);
+
     const conflictCols = [projectQuoted, drawingQuoted, catQuoted].filter(Boolean);
-    const queries = [];
-    for (const e of entries) {
+    if (conflictCols.length < 3) {
+      return NextResponse.json({ error: 'Missing conflict columns' }, { status: 500 });
+    }
+
+    // Normalize and validate entries once
+    const norm = entries.map((e) => {
       const drawingKey = String(e?.drawingNumber ?? e?.drawingNo ?? e?.drgNo ?? '').trim();
-      if (!drawingKey) continue;
-      const category = (e?.category ?? '').toString();
+      const category = String(e?.category ?? '').trim();
+      if (!drawingKey) return null;
       const revision = (e?.rev ?? e?.revision ?? null);
       const revisionTrimmed = typeof revision === 'string' ? revision.trim() : revision;
-      // issueDate can be provided as ISO string or 'YYYY-MM-DD'; default to today if not supplied
-      const issueDate = e?.issueDate ? String(e.issueDate) : new Date().toISOString().slice(0,10);
-      const fileNames = e?.fileNames ?? [];
+      const issueDate = e?.issueDate ? String(e.issueDate) : today;
+      const fileNamesArr = Array.isArray(e?.fileNames) ? e.fileNames : (e?.fileNames ? [e.fileNames] : []);
+      const fileNamesStr = fileNamesArr.map((s) => String(s)).join(', ');
       const clientRowId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).slice(2);
       const titleVal = e?.title ?? e?.item ?? null;
       const statusVal = 'IN_PROGRESS';
-      const metadataVal = { fileNames, revision: revisionTrimmed ?? null, issueDate };
+      const metadataVal = { fileNames: fileNamesArr, revision: revisionTrimmed ?? null, issueDate };
+      return {
+        drawingKey,
+        category,
+        revision: revisionTrimmed,
+        issueDate,
+        fileNamesStr,
+        fileNamesArr,
+        clientRowId,
+        titleVal,
+        statusVal,
+        metadataVal,
+      };
+    }).filter(Boolean);
 
-      const cols = [];
-      const params = [];
-      const values = [];
-      let idx = 1;
-      if (clientQuoted) { cols.push(clientQuoted); params.push(`$${idx++}`); values.push(clientId); }
-      if (projectQuoted) { cols.push(projectQuoted); params.push(`$${idx++}`); values.push(projectId); }
-  if (packageQuoted && packageId != null) { cols.push(packageQuoted); params.push(`$${idx++}`); values.push(packageId); }
-      cols.push(drawingQuoted); params.push(`$${idx++}`); values.push(drawingKey);
-      cols.push(catQuoted); params.push(`$${idx++}`); values.push(category);
-      if (titleQuoted) { cols.push(titleQuoted); params.push(`$${idx++}`); values.push(titleVal); }
-  cols.push('revision'); params.push(`$${idx++}`); values.push(revisionTrimmed);
-      cols.push('"issueDate"'); params.push(`$${idx++}`); values.push(issueDate);
-  cols.push('"fileName"'); params.push(`$${idx++}`); values.push(fileNames.join(', '));
-  // If drgNo column exists, keep it in sync with drawingNumber for Prisma-model compatibility
-  if (lower.get('drgno')) { cols.push('"drgNo"'); params.push(`$${idx++}`); values.push(drawingKey); }
-      if (statusQuoted) { cols.push(statusQuoted); params.push(`$${idx++}`); values.push(statusVal); }
-      if (filePathQuoted && e?.filePath) { cols.push(filePathQuoted); params.push(`$${idx++}`); values.push(e.filePath); }
-      if (metadataQuoted) { cols.push(metadataQuoted); params.push(`$${idx++}`); values.push(JSON.stringify(metadataVal)); }
-      cols.push('meta'); params.push(`$${idx++}`); values.push(JSON.stringify({ fileNames }));
-      cols.push('"lastAttachedAt"'); params.push(`$${idx++}`); values.push(nowIso);
-      cols.push('"clientRowId"'); params.push(`$${idx++}`); values.push(clientRowId);
+    if (!norm.length) {
+      return NextResponse.json({ error: 'No valid entries to insert' }, { status: 400 });
+    }
 
-      const castedParams = params.map((p, i) => {
-        const col = cols[i];
-        if (col === '"lastAttachedAt"') return `${p}::timestamptz`;
-        if (col === '"issueDate"') return `${p}::date`;
-        // Ensure JSONB casts where applicable
-        if (col === 'meta' || (metadataQuoted && col === metadataQuoted)) return `${p}::jsonb`;
-        return p;
-      });
-      const updateSets = [
-        `${catQuoted} = EXCLUDED.${catQuoted}`,
-        ...(titleQuoted ? [`${titleQuoted} = EXCLUDED.${titleQuoted}`] : []),
-        'revision = EXCLUDED.revision',
-        '"issueDate" = EXCLUDED."issueDate"',
-        '"fileName" = EXCLUDED."fileName"',
-        ...(statusQuoted ? [`${statusQuoted} = EXCLUDED.${statusQuoted}`] : []),
-        // Qualify target table column to avoid ambiguity when similarly named columns exist
-        ...(filePathQuoted ? [`${filePathQuoted} = COALESCE(EXCLUDED.${filePathQuoted}, "${table}".${filePathQuoted})`] : []),
-        ...(metadataQuoted ? [`${metadataQuoted} = EXCLUDED.${metadataQuoted}`] : []),
-        'meta = EXCLUDED.meta',
-        '"lastAttachedAt" = EXCLUDED."lastAttachedAt"',
-        '"updatedAt" = NOW()'
-      ];
-      if (packageQuoted) {
-        // ensure packageId gets updated on conflict when provided; fully-qualify target column to avoid ambiguity
-        updateSets.splice(3, 0, `${packageQuoted} = COALESCE(EXCLUDED.${packageQuoted}, "${table}".${packageQuoted})`);
-      }
-      const sql = `INSERT INTO "${table}" (${cols.join(', ')})
-                   VALUES (${castedParams.join(', ')})
-                   ON CONFLICT (${conflictCols.join(', ')})
-                   DO UPDATE SET
-                     ${updateSets.join(',\n                     ')};`;
-      queries.push({ sql, values });
+    // Build VALUES tuples with numbered placeholders to avoid SQL object stringification issues
+    const params = [];
+    const hasClient = !!clientQuoted;
+    const hasProject = !!projectQuoted;
+    const hasPackage = !!packageQuoted;
+    const hasTitle = !!titleQuoted;
+    const hasDrgNo = !!lower.get('drgno');
+    const hasStatus = !!statusQuoted;
+    const hasMetadata = !!metadataQuoted;
+
+    const pushParam = (val, cast) => {
+      const idx = params.length + 1;
+      params.push(val);
+      return cast ? `$${idx}::${cast}` : `$${idx}`;
+    };
+
+    const valueTuplesSql = norm.map((r) => {
+      const parts = [];
+      if (hasClient) parts.push(pushParam(clientId));
+      if (hasProject) parts.push(pushParam(projectId));
+      if (hasPackage) parts.push(pushParam(packageId));
+      parts.push(pushParam(r.drawingKey));
+      parts.push(pushParam(r.category));
+      if (hasTitle) parts.push(pushParam(r.titleVal));
+      parts.push(pushParam(r.revision));
+      parts.push(pushParam(r.issueDate, 'date'));
+      parts.push(pushParam(r.fileNamesStr));
+      if (hasDrgNo) parts.push(pushParam(r.drawingKey));
+      if (hasStatus) parts.push(pushParam(r.statusVal));
+      if (hasMetadata) parts.push(pushParam(JSON.stringify(r.metadataVal), 'jsonb'));
+      parts.push(pushParam(JSON.stringify({ fileNames: r.fileNamesArr }), 'jsonb'));
+      parts.push(pushParam(nowIso, 'timestamptz'));
+      parts.push(pushParam(r.clientRowId));
+      return `(${parts.join(', ')})`;
+    }).join(', ');
+
+    const insertColsSql = insertColsRaw.join(', ');
+    const conflictSql = conflictCols.join(', ');
+
+    const updateSets = [
+      `${catQuoted} = EXCLUDED.${catQuoted}`,
+      ...(titleQuoted ? [`${titleQuoted} = EXCLUDED.${titleQuoted}`] : []),
+      `revision = EXCLUDED.revision`,
+      `"issueDate" = EXCLUDED."issueDate"`,
+      `"fileName" = EXCLUDED."fileName"`,
+      ...(statusQuoted ? [`${statusQuoted} = EXCLUDED.${statusQuoted}`] : []),
+      ...(metadataQuoted ? [`${metadataQuoted} = EXCLUDED.${metadataQuoted}`] : []),
+      `meta = EXCLUDED.meta`,
+      `"lastAttachedAt" = EXCLUDED."lastAttachedAt"`,
+      `"updatedAt" = NOW()`
+    ];
+    if (packageQuoted) {
+      // Update packageId on conflict when provided; keep existing when not
+      updateSets.splice(3, 0, `${packageQuoted} = COALESCE(EXCLUDED.${packageQuoted}, "${table}".${packageQuoted})`);
     }
-    // Execute with targeted error reporting for easier debugging
-    for (const q of queries) {
-      try {
-        await prisma.$executeRawUnsafe(q.sql, ...q.values);
-        upserts++;
-      } catch (err) {
-        console.error('[project-drawings] upsert failed:', err?.message || err, '\nCode:', err?.code, '\nSQL:', q.sql, '\nValues:', q.values);
-        // Fallback path: use Prisma upsert against Prisma schema (drgNo/meta)
-        try {
-          if (!Array.isArray(entries) || entries.length === 0) throw err;
-          let fallbackUpserts = 0;
-          const fallbackErrors = [];
-          for (const e of entries) {
-            const drgNo = String(e?.drawingNumber ?? e?.drawingNo ?? e?.drgNo ?? '').trim();
-            if (!drgNo) continue;
-            const category = (e?.category ?? null);
-            const revision = e?.rev ?? e?.revision ?? null;
-            const fileNames = Array.isArray(e?.fileNames) ? e.fileNames : [];
-            const issueDate = e?.issueDate ? String(e.issueDate) : new Date().toISOString().slice(0,10);
-            const metaObj = { fileNames, revision, issueDate };
-            const item = e?.title ?? e?.item ?? null;
-            try {
-              await prisma.projectDrawing.upsert({
-                where: { projectId_drgNo_category: { projectId: Number(projectId), drgNo, category } },
-                create: {
-                  clientId: Number(clientId),
-                  projectId: Number(projectId),
-                  drgNo,
-                  category,
-                  revision,
-                  fileName: fileNames.join(', '),
-                  lastAttachedAt: new Date(),
-                  meta: metaObj,
-                  item,
-                },
-                update: {
-                  category,
-                  revision,
-                  fileName: fileNames.join(', '),
-                  lastAttachedAt: new Date(),
-                  meta: metaObj,
-                  item,
-                }
-              });
-              fallbackUpserts++;
-            } catch (perr) {
-              fallbackErrors.push(perr?.message || String(perr));
-            }
-          }
-          if (fallbackUpserts > 0) {
-            return NextResponse.json({ upserts: fallbackUpserts, fallback: 'prisma', errors: fallbackErrors });
-          }
-          // If fallback produced no upserts, surface both raw and fallback errors
-          return NextResponse.json({
-            error: err?.message || String(err),
-            code: err?.code,
-            sql: q.sql,
-            values: q.values,
-            fallback: 'prisma',
-            fallbackErrors,
-          }, { status: 500 });
-        } catch (inner) {
-          return NextResponse.json({
-            error: err?.message || String(err),
-            code: err?.code,
-            sql: q.sql,
-            values: q.values,
-            fallbackError: inner?.message || String(inner)
-          }, { status: 500 });
-        }
-      }
-    }
-    return NextResponse.json({ upserts });
+
+    const sql = `
+      INSERT INTO "${table}" (${insertColsSql})
+      VALUES ${valueTuplesSql}
+      ON CONFLICT (${conflictSql})
+      DO UPDATE SET ${updateSets.join(', ')}
+      RETURNING (xmax = 0) AS inserted;
+    `;
+
+    const result = await prisma.$queryRawUnsafe(sql, ...params);
+    const total = Array.isArray(result) ? result.length : 0;
+    const created = Array.isArray(result) ? result.filter((r) => r?.inserted === true).length : 0;
+    const updated = Math.max(total - created, 0);
+    return NextResponse.json({ success: true, created, updated, total });
   } catch (e) {
     console.error('/api/project-drawings POST error:', e?.message || e);
     return NextResponse.json({ error: e?.message || 'Unexpected error' }, { status: 500 });
