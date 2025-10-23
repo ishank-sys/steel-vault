@@ -76,13 +76,15 @@ const handleNextClick = () => {
   }, []);
 
   const handleFieldUpdate = useCallback((field, value) => {
-    setMappedDrawings((prev) =>
-      prev.map((row, idx) =>
-        selectedRows.has(idx)
-          ? { ...row, [field]: value }
-          : row
-      )
-    );
+    setMappedDrawings((prev) => {
+      const total = prev.length;
+      const hasSelection = selectedRows && selectedRows.size > 0;
+      // If nothing selected, apply to all rows (UX: bulk update)
+      if (!hasSelection) {
+        return prev.map((row) => ({ ...row, [field]: value }));
+      }
+      return prev.map((row, idx) => (selectedRows.has(idx) ? { ...row, [field]: value } : row));
+    });
   }, [selectedRows]);
 
   const openModal = useCallback((row) => {
@@ -244,22 +246,7 @@ const handleNextClick = () => {
             field="dateSentForFab"
           />
 
-          <InputField
-            className="bg-gray-100"
-            label="Revision :"
-            value={formData.revision}
-            onChange={(val) => handleChange('revision', val)}
-            onUpdate={() => handleFieldUpdate('rev', formData.revision)}
-            field="rev"
-          />
-          <InputField
-            className="bg-gray-100"
-            label="Sheet size :"
-            value={formData.sheetSize}
-            onChange={(val) => handleChange('sheetSize', val)}
-            onUpdate={() => handleFieldUpdate('sheetSize', formData.sheetSize)}
-            field="sheetSize"
-          />
+          {/* Removed Revision and Sheet size inputs as requested */}
         </div>
 
         {/* Right Column */}
@@ -297,8 +284,35 @@ const handleNextClick = () => {
               </div>
             </div>
             <div className="grid grid-cols-1 gap-4">
-              <InputField label="Transmittal Name:" value={transmittalName} onChange={()=>{}} readOnly />
-              <InputField label="Submittal Name:" value={submittalName} onChange={()=>{}} readOnly />
+              {/* Transmittal Name with tick */}
+              <div className='space-y-1'>
+                <label className="block font-medium mb-1 flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    className="accent-teal-700 h-4 w-4"
+                    checked={Boolean(transmittalName)}
+                    onChange={(e) => e.target.checked ? generateLogName('transmittal') : clearLogName('transmittal')}
+                  />
+                  <span>Transmittal Name:</span>
+                </label>
+                <input type="text" className="input bg-gray-200" value={transmittalName} readOnly />
+              </div>
+
+              {/* Submittal Name with tick */}
+              <div className='space-y-1'>
+                <label className="block font-medium mb-1 flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    className="accent-teal-700 h-4 w-4"
+                    checked={Boolean(submittalName)}
+                    onChange={(e) => e.target.checked ? generateLogName('submittal') : clearLogName('submittal')}
+                  />
+                  <span>Submittal Name:</span>
+                </label>
+                <input type="text" className="input bg-gray-200" value={submittalName} readOnly />
+              </div>
+
+              {/* Zip Name remains read-only */}
               <InputField label="Zip Name:" value={zipName} onChange={()=>{}} readOnly />
             </div>
           </div>
@@ -349,17 +363,7 @@ const handleNextClick = () => {
         </span>
       </div>
 
-      {/* Log checkboxes */}
-      <div className="flex flex-wrap items-center gap-4 text-sm mt-2 mb-4">
-        <label className="flex items-center gap-2">
-          <input type="checkbox" onChange={e => e.target.checked ? generateLogName('transmittal') : clearLogName('transmittal')} />
-          Transmittal Log
-        </label>
-        <label className="flex items-center gap-2">
-          <input type="checkbox" onChange={e => e.target.checked ? generateLogName('submittal') : clearLogName('submittal')} />
-          Submittal Log
-        </label>
-      </div>
+      {/* Log checkboxes moved next to names above */}
 
       {/* Drawing Table */}
       <div className="overflow-x-auto border rounded mb-6">
@@ -404,9 +408,23 @@ const handleNextClick = () => {
 
       {/* Footer */}
       <div className="flex justify-between mt-6">
-        <button className="btn-primary" onClick={handleNextClick}>Next</button>
-        <button className="btn-secondary" onClick={() => router.push("/dashboard/project/project/publish_drawings")}
-        >Back To TL</button>
+        {/* Back on the left, more visible */}
+        <button
+          className="btn-secondary bg-gray-700 hover:bg-gray-800 text-white font-semibold px-5 py-2.5 rounded-md shadow focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-600"
+          onClick={() => router.push("/dashboard/project/project/publish_drawings")}
+          title="Back to Team Lead"
+        >
+          Back To TL
+        </button>
+
+        {/* Next on the right, emphasized */}
+        <button
+          className="btn-primary bg-teal-700 hover:bg-teal-800 text-white font-semibold px-6 py-2.5 rounded-md shadow focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-600"
+          onClick={handleNextClick}
+          title="Proceed to Transmittal Form"
+        >
+          Next
+        </button>
       </div>
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
@@ -499,6 +517,8 @@ const TableRow = React.memo(({ drawing, index, isSelected, isVoided, onToggleSel
     <td className="p-2">{drawing.drawingNo}</td>
     <td className="p-1">
       <input
+        type="date"
+        className="input"
         value={
           drawing.dateSentForApproval
             ? new Date(drawing.dateSentForApproval).toISOString().slice(0, 10)
@@ -509,6 +529,8 @@ const TableRow = React.memo(({ drawing, index, isSelected, isVoided, onToggleSel
     </td>
     <td className="p-2">
       <input
+        type="date"
+        className="input"
         value={
           drawing.dateSentForFab
             ? new Date(drawing.dateSentForFab).toISOString().slice(0, 10)
@@ -518,7 +540,16 @@ const TableRow = React.memo(({ drawing, index, isSelected, isVoided, onToggleSel
       />
     </td>
     <td className="p-1">
-      <input type="date" className="input" />
+      <input
+        type="date"
+        className="input"
+        value={
+          drawing.bfaDate
+            ? new Date(drawing.bfaDate).toISOString().slice(0, 10)
+            : ''
+        }
+        readOnly
+      />
     </td>
     <td className="p-2 text-center">{drawing.rev}</td>
     <td className="p-2">{drawing.sheetSize}</td>

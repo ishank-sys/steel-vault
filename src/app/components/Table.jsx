@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { FaEye, FaEdit, FaTrash } from 'react-icons/fa';
 import Link from 'next/link';
 
@@ -13,12 +13,35 @@ const TableComponent = ({
   actionHeaderText = "Action",
   cellClickHandlers = {},
   customColumns = [], 
+  // Loading UX
+  loading: loadingProp, // optional: parent-driven loading state
+  emptyTimeoutMs = 8000, // how long to show Loading... before No data when length===0
 }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const rowsPerPage = 10;
 
   const totalPages = Math.ceil(data.length / rowsPerPage);
   const currentData = data.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
+
+  // Local loading timeout fallback when parent doesn't provide loading
+  const [timePassed, setTimePassed] = useState(false);
+  const timerRef = useRef(null);
+
+  useEffect(() => {
+    // If there is data, ensure we are not in loading fallback
+    if (Array.isArray(data) && data.length > 0) {
+      if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+      setTimePassed(true);
+      return;
+    }
+    // No data: start or reset timer
+    setTimePassed(false);
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    timerRef.current = setTimeout(() => setTimePassed(true), Math.max(0, Number(emptyTimeoutMs) || 0));
+    return () => {
+      if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    };
+  }, [Array.isArray(data) ? data.length : 0, emptyTimeoutMs]);
 
   const handlePageChange = (page) => {
     if (page >= 1 && page <= totalPages) setCurrentPage(page);
@@ -50,7 +73,9 @@ const TableComponent = ({
           {currentData.length === 0 ? (
             <tr>
               <td colSpan={headers.length + customColumns.length + (showActions ? 1 : 0)} className="px-4 py-6 text-center text-gray-500">
-                No data available.
+                {loadingProp === true || (loadingProp === undefined && !timePassed)
+                  ? 'Loading...'
+                  : 'No data available.'}
               </td>
             </tr>
           ) : (

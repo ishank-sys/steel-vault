@@ -26,6 +26,7 @@ const TransmittalForm = () => {
   const [publishResult, setPublishResult] = useState(null);
   const [showPublishModal, setShowPublishModal] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadPhase, setUploadPhase] = useState(null); // null | 'processing' | 'uploading'
   // Email fields
   const [toEmails, setToEmails] = useState('');
   const [emailSubject, setEmailSubject] = useState('');
@@ -605,7 +606,8 @@ const handlePublish = async () => {
   const zipName = zipNameRef.current?.value || '';
 
   try {
-    setUploadProgress(0);
+  setUploadProgress(0);
+  setUploadPhase('processing');
     setIsPublishing(true);
 
     // Validate required data before creating files
@@ -795,6 +797,7 @@ const handlePublish = async () => {
     const zipFile = new File([content], zipFileName, { type: 'application/zip' });
 
     // Upload to GCS using signed URL; then log via /api/upload (JSON)
+    setUploadPhase('uploading');
     const res = await uploadToGCSDirect(zipFile, {
       clientId: Number(clientId),
       projectId: Number(projectIdToSend),
@@ -867,6 +870,7 @@ const handlePublish = async () => {
     setShowPublishModal(true);
   } finally {
     setIsPublishing(false);
+    setUploadPhase(null);
   }
 };
 
@@ -1049,17 +1053,26 @@ const handlePublish = async () => {
         <button className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700" onClick={() => router.push("/dashboard/project/project/publish_drawings/hybrid_publish_drawings")}>Back For Correction</button>
       </div>
 
-      {/* Upload Progress Bar for Publish */}
+      {/* Upload Progress UI for Publish */}
       {isPublishing && (
-        <div className="w-full bg-gray-200 rounded h-3 mt-2">
-          <div
-            className="bg-blue-600 h-3 rounded"
-            style={{ width: `${uploadProgress}%`, transition: 'width 0.2s' }}
-          ></div>
-        </div>
-      )}
-      {isPublishing && (
-        <div className="text-xs text-gray-700 mt-1">{uploadProgress}%</div>
+        uploadPhase === 'processing' ? (
+          <div className="mt-2">
+            <div className="w-full bg-gray-200 rounded h-3 overflow-hidden">
+              <div className="h-3 w-full bg-gradient-to-r from-gray-300 via-gray-400 to-gray-300 animate-pulse"></div>
+            </div>
+            <div className="text-xs text-gray-700 mt-1">Processing… preparing files and saving records</div>
+          </div>
+        ) : (
+          <div className="mt-2">
+            <div className="w-full bg-gray-200 rounded h-3">
+              <div
+                className="bg-blue-600 h-3 rounded"
+                style={{ width: `${uploadProgress}%`, transition: 'width 0.2s' }}
+              ></div>
+            </div>
+            <div className="text-xs text-gray-700 mt-1">{uploadProgress}%</div>
+          </div>
+        )
       )}
 
       {/* Publish confirmation modal (printable) */}
