@@ -403,7 +403,8 @@ export async function POST(req) {
 
         // 2) If previous exists, mark it temporarily as non-active to satisfy partial unique index
         if (prevId && hasSupersede) {
-          await tx.$executeRawUnsafe(`UPDATE "${table}" SET superseded_by = -1, "status" = 'SUSPENDED', "updatedAt" = NOW() WHERE id = $1`, prevId);
+          // Mark previous active row as VOID (formerly 'SUSPENDED') when superseded
+          await tx.$executeRawUnsafe(`UPDATE "${table}" SET superseded_by = -1, "status" = 'VOID', "updatedAt" = NOW() WHERE id = $1`, prevId);
         }
 
         // 3) Insert new ACTIVE row

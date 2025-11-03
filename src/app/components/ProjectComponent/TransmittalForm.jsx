@@ -2,6 +2,7 @@
 
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import JSZip from "jszip";
 import { saveAs } from 'file-saver';
 import { uploadToGCSDirect } from '@/lib/uploadToGCS';
@@ -27,6 +28,7 @@ const TransmittalForm = () => {
   const [showPublishModal, setShowPublishModal] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadPhase, setUploadPhase] = useState(null); // null | 'processing' | 'uploading'
+  const [completeLogEnabled, setCompleteLogEnabled] = useState(false);
   // Email fields
   const [toEmails, setToEmails] = useState('');
   const [emailSubject, setEmailSubject] = useState('');
@@ -34,6 +36,25 @@ const TransmittalForm = () => {
 
   // Date logic from HybridPublishDrawings
   const today = new Date().toISOString().slice(0, 10);
+
+  // --- Filename helpers (DDMMYY_ProjectName_Suffix) ---
+  const getDateStr = () => {
+    const d = new Date();
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yy = String(d.getFullYear()).slice(-2);
+    return `${dd}${mm}${yy}`;
+  };
+  const sanitizeProjectForFile = (name) => String(name || '')
+    // remove characters illegal on Windows/macOS file names but keep spaces
+    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '')
+    .trim()
+    .replace(/\s+/g, ' ');
+  const makeLogBase = (suffix) => {
+    const dateStr = getDateStr();
+    const proj = sanitizeProjectForFile(projectName || projectNo || 'Project');
+    return `${dateStr}_${proj}_${suffix}`;
+  };
 
   // --- Auto-fill Header Info from selected project ---
   useEffect(() => {
@@ -145,6 +166,7 @@ const tableDrawings = selectedDrawings.map((d, i) => {
   const fabricatorNameRef = useRef();
   const teamLeaderRef = useRef();
   const zipNameRef = useRef();
+  const completeNameRef = useRef();
 
   // Download handler
   // const handleDownload = async () => {
@@ -203,143 +225,7 @@ const tableDrawings = selectedDrawings.map((d, i) => {
   //   doc.setFont('helvetica', 'normal');
 
   //   // Left column of header
-  //   doc.text(`TO: ${fabricatorName}`, 40, y);
-  //   doc.text(`ATTN: ${fabricatorCoordinator}`, 40, y + 15);
-  //   doc.text(`PROJECT NAME: ${projectName}`, 40, y + 30);
 
-  //   // Right column of header
-  //   doc.text(`DATE: ${formattedDate}`, 350, y);
-  //   doc.text(`TRANSMITTAL NO: 002`, 350, y + 15); // Hardcoded, can be made dynamic
-  //   doc.text(`FABRICATOR JOB NO: ${fabricatorJobNo}`, 350, y + 30);
-  //   doc.text(`ISSUED BY: ${solTeamLeader}`, 350, y + 45);
-  //   doc.text(`SEQUENCE NO:`, 350, y + 60); // Hardcoded, can be made dynamic
-  //   doc.text(`SOL JOB NO: ${solJobNo}`, 350, y + 75);
-
-  //   // --- "WE ARE SENDING YOU" Checklist Block ---
-  //   y += 100;
-  //   doc.setFontSize(10);
-  //   doc.text('WE ARE SENDING YOU:', 40, y);
-  //   y += 15;
-  //   doc.text('Drg Qty.', 60, y);
-  //   doc.text('Drg Qty.', 370, y);
-  //   y += 15;
-
-  //   // Left column checklist
-  //   doc.text(`[${newItemForApprovalQty > 0 ? 'X' : ' '}]`, 40, y);
-  //   doc.text(`${newItemForApprovalQty}`, 60, y);
-  //   doc.text('NEW ITEM FOR APPROVAL', 90, y);
-  //   y += 15;
-  //   doc.text(`[${newItemForFabFieldQty > 0 ? 'X' : ' '}]`, 40, y);
-  //   doc.text(`${newItemForFabFieldQty}`, 60, y);
-  //   doc.text('NEW ITEM FOR FAB/FIELD', 90, y);
-  //   y += 15;
-  //   doc.text(`[${deletedItemQty > 0 ? 'X' : ' '}]`, 40, y);
-  //   doc.text(`${deletedItemQty}`, 60, y);
-  //   doc.text('DELETED ITEM', 90, y);
-
-  //   // Reset Y for the right column to align
-  //   y -= 30;
-
-  //   // Right column checklist
-  //   doc.text(`[${revisedItemForApprovalQty > 0 ? 'X' : ' '}]`, 350, y);
-  //   doc.text(`${revisedItemForApprovalQty}`, 370, y);
-  //   doc.text('REVISED ITEM FOR APPROVAL', 400, y);
-  //   y += 15;
-  //   doc.text(`[${revisedItemForFabFieldQty > 0 ? 'X' : ' '}]`, 350, y);
-  //   doc.text(`${revisedItemForFabFieldQty}`, 370, y);
-  //   doc.text('REVISED ITEM FOR FAB/FIELD', 400, y);
-  //   y += 15;
-  //   doc.text('Total', 350, y);
-  //   doc.text(`${totalQty}`, 400, y);
-
-  //   // --- TRANSMITTAL REMARK Block ---
-  //   y += 40;
-  //   const remarkRectX = 35;
-  //   const remarkRectY = y;
-  //   const remarkRectWidth = 520;
-  //   const remarkTitleHeight = 20;
-  //   const remarkContentHeight = 30;
-
-  //   doc.setDrawColor(0);
-  //   doc.rect(remarkRectX, remarkRectY, remarkRectWidth, remarkTitleHeight + remarkContentHeight);
-  //   doc.line(remarkRectX, remarkRectY + remarkTitleHeight, remarkRectX + remarkRectWidth, remarkRectY + remarkTitleHeight);
-
-  //   doc.setFontSize(12);
-  //   doc.setFont('helvetica', 'bold');
-  //   doc.text('TRANSMITTAL REMARK', remarkRectX + (remarkRectWidth / 2), remarkRectY + (remarkTitleHeight / 2) + 4, { align: 'center' });
-
-  //   doc.setFontSize(10);
-  //   doc.setFont('helvetica', 'normal');
-  //   doc.text(zipName, remarkRectX + 5, remarkRectY + remarkTitleHeight + (remarkContentHeight / 2) + 3);
-
-  //   y = remarkRectY + remarkTitleHeight + remarkContentHeight;
-
-  //   // --- Drawings Table ---
-  //   y += 20;
-
-  //   // Group by description
-  //   const grouped = {};
-  //   tableDrawings.forEach(item => {
-  //     const desc = item.void ? `${item.desc} [VOID]` : item.desc;
-  //     if (!grouped[desc]) grouped[desc] = [];
-  //     grouped[desc].push(item.drawingNo);
-  //   });
-
-  //   const pdfTableHeaders = [['REV. REMARK', 'SHEET TITLE', 'SHEET NAME', 'SHEET QTY']];
-  //   const pdfTableData = Object.entries(grouped).map(([desc, drawingNos]) => [
-  //     'ISSUED FOR APPROVAL',
-  //     desc,
-  //     drawingNos.join(', '),
-  //     drawingNos.length
-  //   ]);
-
-  //   autoTable(doc, {
-  //     startY: y,
-  //     head: pdfTableHeaders,
-  //     body: pdfTableData,
-  //     styles: { fontSize: 10, cellPadding: 4 },
-  //     headStyles: { fillColor: [0, 112, 192] },
-  //     theme: 'grid'
-  //   });
-
-  //   // --- PDF as Blob ---
-  //   const pdfBlob = doc.output('blob');
-
-  //   // --- ZIP LOGIC ---
-  //   const zip = new JSZip();
-  //   const rootFolder = zip.folder("Drawing");
-
-  //   // Helper to get folder name by category
-  //   const getCategoryFolder = (cat) => {
-  //     if (cat === "A") return "Shop Drawings";
-  //     if (cat === "G") return "Erection Drawings";
-  //     if (cat === "W") return "Part Drawings";
-  //     return "Other Drawings";
-  //   };
-
-  //   // Add attached PDFs to category folders
-  //   (storeDrawings || []).forEach(d => {
-  //     if (d.attachedPdfs && d.attachedPdfs.length) {
-  //       const folderName = getCategoryFolder(d.category?.toString().trim());
-  //       const subFolder = rootFolder.folder(folderName);
-  //       d.attachedPdfs.forEach(file => {
-  //         const actualFile = file?.file || file;
-  //         subFolder.file(actualFile.name, actualFile);
-  //       });
-  //     }
-  //   });
-
-  //   // Add Extras and Models: each file goes in a folder named after its extension
-  //   const addToZipByExtension = (filesArray) => {
-  //     if (!filesArray || !filesArray.length) return;
-  //     filesArray.forEach((file) => {
-  //       if (!file?.file && !(file instanceof File)) return;
-  //       const actualFile = file?.file || file;
-  //       const ext = actualFile.name.split('.').pop()?.toUpperCase() || "UNKNOWN";
-  //       const extFolder = zip.folder(ext);
-  //       extFolder.file(actualFile.name, actualFile);
-  //     });
-  //   };
   //   addToZipByExtension(extras);
   //   addToZipByExtension(models);
 
@@ -351,6 +237,175 @@ const tableDrawings = selectedDrawings.map((d, i) => {
   //   alert("Download completed!");
   //   saveAs(content, `${zipName || 'Drawing'}.zip`);
   // };
+
+// Helper to create Complete Log Excel (DB-backed) and return as Blob
+const createCompleteLogBlob = async (projectIdNum, pkgIdResolved) => {
+  // Fetch drawings (include full history)
+  const qp = new URLSearchParams({ projectId: String(projectIdNum), all: '1' });
+  if (pkgIdResolved != null) qp.set('packageId', String(pkgIdResolved));
+  const res = await fetch(`/api/project-drawings?${qp.toString()}`, { cache: 'no-store' });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error || res.statusText);
+  }
+  const rows = await res.json();
+  if (!Array.isArray(rows) || rows.length === 0) {
+    throw new Error('No drawings found for Complete Log');
+  }
+
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Complete Log');
+
+  // Header block
+  ws.addRow(['PROJECT NAME', projectName || '', 'PACKAGE', selectedPackageName || (pkgIdResolved ? `#${pkgIdResolved}` : 'All')]);
+  ws.addRow(['DATE', new Date().toISOString().slice(0,10)]);
+  ws.addRow([]);
+
+  // Columns and header
+  ws.columns = [
+    { key: 'sno', width: 6 },
+    { key: 'drawingNo', width: 22 },
+    { key: 'title', width: 36 },
+    { key: 'category', width: 12 },
+    { key: 'revision', width: 10 },
+    { key: 'createdAt', width: 20 },
+    { key: 'status', width: 14 },
+    { key: 'fileNames', width: 40 },
+  ];
+  const headerRow = ws.addRow(['S.No', 'Drawing No', 'Title/Item', 'Category', 'Revision', 'Issue Date/Time', 'Status', 'File Name(s)']);
+  headerRow.font = { bold: true };
+
+  // Robust issueDate normalization: handles ISO strings, Date, or nested objects/metadata
+  const normalizeIssueDate = (row) => {
+    // Safely parse metadata/meta if they arrive as strings
+    let metadata = row?.metadata;
+    let meta = row?.meta;
+    try { if (typeof metadata === 'string') metadata = JSON.parse(metadata); } catch {}
+    try { if (typeof meta === 'string') meta = JSON.parse(meta); } catch {}
+
+    // Try common keys (camelCase, snake_case, nested)
+    let v = row?.issueDate
+      ?? metadata?.issueDate
+      ?? metadata?.issue_date
+      ?? meta?.issueDate
+      ?? meta?.issue_date
+      ?? row?.createdAt;
+    try {
+      if (!v) return '';
+      if (v instanceof Date) return v.toISOString().slice(0, 10);
+      if (typeof v === 'string') {
+        const iso = v.match(/\d{4}-\d{2}-\d{2}/);
+        if (iso) return iso[0];
+        const d = new Date(v);
+        if (!isNaN(d)) return d.toISOString().slice(0, 10);
+        return v; // fallback raw string
+      }
+      if (typeof v === 'object') {
+        if (v.$date) return String(v.$date).slice(0, 10);
+        if (v.date) return String(v.date).slice(0, 10);
+        // As a last resort, stringify
+        const s = JSON.stringify(v);
+        const iso = s.match(/\d{4}-\d{2}-\d{2}/);
+        if (iso) return iso[0];
+      }
+    } catch {}
+    return '';
+  };
+
+  const normalizeCreatedAt = (row) => {
+    // Prefer explicit createdAt; accept common variants if needed
+    let v = row?.createdAt ?? row?.metadata?.createdAt ?? row?.meta?.createdAt;
+    try {
+      if (!v) return '';
+      if (v instanceof Date) {
+        const yyyy = v.getFullYear();
+        const mm = String(v.getMonth() + 1).padStart(2, '0');
+        const dd = String(v.getDate()).padStart(2, '0');
+        const hh = String(v.getHours()).padStart(2, '0');
+        const mi = String(v.getMinutes()).padStart(2, '0');
+        const ss = String(v.getSeconds()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+      }
+      if (typeof v === 'string') {
+        // Try to extract 'YYYY-MM-DD HH:MM:SS' or build from Date
+        const m = v.match(/(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})/);
+        if (m) return `${m[1]} ${m[2]}`;
+        const d = new Date(v);
+        if (!isNaN(d)) {
+          const yyyy = d.getFullYear();
+          const mm = String(d.getMonth() + 1).padStart(2, '0');
+          const dd = String(d.getDate()).padStart(2, '0');
+          const hh = String(d.getHours()).padStart(2, '0');
+          const mi = String(d.getMinutes()).padStart(2, '0');
+          const ss = String(d.getSeconds()).padStart(2, '0');
+          return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+        }
+        // Fallback to date-only if present
+        const iso = v.match(/\d{4}-\d{2}-\d{2}/);
+        if (iso) return `${iso[0]} 00:00:00`;
+        return v;
+      }
+      if (typeof v === 'object') {
+        const raw = v.$date || v.date || JSON.stringify(v);
+        if (typeof raw === 'string') {
+          const m = raw.match(/(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})/);
+          if (m) return `${m[1]} ${m[2]}`;
+          const d = new Date(raw);
+          if (!isNaN(d)) {
+            const yyyy = d.getFullYear();
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const dd = String(d.getDate()).padStart(2, '0');
+            const hh = String(d.getHours()).padStart(2, '0');
+            const mi = String(d.getMinutes()).padStart(2, '0');
+            const ss = String(d.getSeconds()).padStart(2, '0');
+            return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+          }
+          const iso = raw.match(/\d{4}-\d{2}-\d{2}/);
+          if (iso) return `${iso[0]} 00:00:00`;
+        }
+      }
+    } catch {}
+    return '';
+  };
+
+  rows.forEach((r, idx) => {
+    const drawingNo = r.drawingNumber || r.drgNo || '';
+    const title = r.title || r.item || '';
+    const category = r.category || '';
+    const revision = r.revision || '';
+  const issueDate = normalizeCreatedAt(r) || normalizeIssueDate(r);
+    // Normalize status display: map historical 'SUSPENDED' -> 'VOID'
+    const rawStatus = (r.status || '').toString();
+    const status = rawStatus && rawStatus.toUpperCase() === 'SUSPENDED' ? 'VOID' : rawStatus;
+    let fileNames = '';
+    try {
+      if (r.fileName) fileNames = String(r.fileName);
+      else if (r.meta && Array.isArray(r.meta.fileNames)) fileNames = r.meta.fileNames.join(', ');
+      else if (r.metadata && Array.isArray((r.metadata.fileNames))) fileNames = r.metadata.fileNames.join(', ');
+    } catch {}
+    const added = ws.addRow([
+      idx + 1,
+      drawingNo,
+      title,
+      category,
+      revision,
+      issueDate,
+      status,
+      fileNames,
+    ]);
+    if (String(status).toUpperCase() === 'VOID') {
+      added.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFC7CE' } };
+      added.font = { color: { argb: 'FF9C0006' } };
+    }
+  });
+
+  const headerRowIndex = 4;
+  ws.autoFilter = { from: { row: headerRowIndex, column: 1 }, to: { row: headerRowIndex + rows.length, column: 8 } };
+  ws.getRow(headerRowIndex).font = { bold: true };
+
+  const buffer = await wb.xlsx.writeBuffer();
+  return new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+};
 
 const handleDownload = async () => {
   // --- Get header info values from refs ---
@@ -593,14 +648,61 @@ const handleDownload = async () => {
   addToZipByExtension(approvedExtras);
   addToZipByExtension(approvedModels);
 
-  zip.file(`${zipName || 'Transmittal'}.pdf`, pdfBlob);
-  zip.file(`${zipName || 'Transmittal'}.xlsx`, excelBlob);
+  // Naming:  DDMMYY_<ProjectName>_DrawingTransmittalLog
+  const transBaseName = (transmittalName && transmittalName.trim()) || makeLogBase('DrawingTransmittalLog');
+  zip.file(`${transBaseName}.pdf`, pdfBlob);
+  zip.file(`${transBaseName}.xlsx`, excelBlob);
+
+  // Optional: add Complete Log if enabled
+  if (completeLogEnabled) {
+    try {
+      // Resolve projectId and packageId
+      let projectIdNum = selectedProjectId != null && /^\d+$/.test(String(selectedProjectId)) ? Number(selectedProjectId) : null;
+      if (!projectIdNum) {
+        try {
+          const pres = await fetch('/api/projects', { method: 'GET', headers: { 'Content-Type': 'application/json' } });
+          if (pres.ok) {
+            const pj = await pres.json();
+            const found = (pj || []).find(p =>
+              String(p.projectNo) === String(projectNo) ||
+              String(p.name) === String(projectNo) ||
+              String(p.projectName) === String(projectNo) ||
+              String(p.id) === String(projectNo)
+            );
+            if (found) projectIdNum = Number(found.id);
+          }
+        } catch {}
+      }
+      let pkgIdResolved = null;
+      if (projectIdNum) {
+        try {
+          const resp = await fetch(`/api/packages?projectId=${Number(projectIdNum)}`, { cache: 'no-store' });
+          if (resp.ok) {
+            const list = await resp.json();
+            const needle = String(selectedPackageName || '').trim().toLowerCase();
+            const match = (list || []).find(p => {
+              const nm = String(p?.name || '').trim().toLowerCase();
+              const pn = String(p?.packageNumber || '').trim().toLowerCase();
+              return (nm && nm === needle) || (pn && pn === needle);
+            });
+            if (match?.id != null) pkgIdResolved = Number(match.id);
+          }
+        } catch {}
+      }
+      if (projectIdNum) {
+        const completeBlob = await createCompleteLogBlob(projectIdNum, pkgIdResolved);
+        const completeBaseName = makeLogBase('DrawingCompleteLog');
+        zip.file(`${completeBaseName}.xlsx`, completeBlob);
+      }
+    } catch (e) {
+      console.warn('Complete Log generation skipped:', e?.message || e);
+    }
+  }
 
   const content = await zip.generateAsync({ type: "blob" });
   alert("Download completed!");
   saveAs(content, `${zipName || 'Drawing'}.zip`);
 };
-
 // Publish: upsert to DB and upload the ZIP to storage
 const handlePublish = async () => {
   const zipName = zipNameRef.current?.value || '';
@@ -789,8 +891,20 @@ const handlePublish = async () => {
     };
     addToZipByExtension(approvedExtras);
     addToZipByExtension(approvedModels);
-    zip.file(`${zipName || 'Transmittal'}.pdf`, pdfBlob);
-    zip.file(`${zipName || 'Transmittal'}.xlsx`, excelBlob);
+  // Naming:  DDMMYY_<ProjectName>_DrawingTransmittalLog
+  const transBaseNamePub = (transmittalName && transmittalName.trim()) || makeLogBase('DrawingTransmittalLog');
+  zip.file(`${transBaseNamePub}.pdf`, pdfBlob);
+  zip.file(`${transBaseNamePub}.xlsx`, excelBlob);
+    // Optional: add Complete Log if enabled
+    if (completeLogEnabled) {
+      try {
+        const completeBlob = await createCompleteLogBlob(Number(projectIdToSend), pkgIdResolved);
+        const completeBaseName = makeLogBase('DrawingCompleteLog');
+        zip.file(`${completeBaseName}.xlsx`, completeBlob);
+      } catch (e) {
+        console.warn('Complete Log generation (publish) skipped:', e?.message || e);
+      }
+    }
 
     const content = await zip.generateAsync({ type: "blob" });
     const zipFileName = `${zipName || 'Transmittal'}.zip`;
@@ -931,7 +1045,7 @@ const handlePublish = async () => {
         </div>
         <div>
           <label>Complete Name:</label>
-          <input className="border w-full px-2 py-1 rounded" />
+          <input ref={completeNameRef} className="border w-full px-2 py-1 rounded" />
         </div>
       </div>
 
@@ -996,7 +1110,7 @@ const handlePublish = async () => {
       <div className="flex flex-wrap items-center gap-4 text-sm mt-4">
         <label className="flex items-center gap-1"><input type="checkbox" onChange={e => e.target.checked ? generateLogName('transmittal') : clearLogName('transmittal')} /> Transmittal Log</label>
         <label className="flex items-center gap-1"><input type="checkbox" onChange={e => e.target.checked ? generateLogName('submittal') : clearLogName('submittal')} /> Submittal Log</label>
-        <label className="flex items-center gap-1"><input type="checkbox" /> Complete Log</label>
+  <label className="flex items-center gap-1"><input type="checkbox" onChange={(e)=> setCompleteLogEnabled(e.target.checked)} /> Complete Log</label>
       </div>
 
       {/* Email Section */}
@@ -1050,6 +1164,7 @@ const handlePublish = async () => {
         >
           Download
         </button>
+        
         <button className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700" onClick={() => router.push("/dashboard/project/project/publish_drawings/hybrid_publish_drawings")}>Back For Correction</button>
       </div>
 
