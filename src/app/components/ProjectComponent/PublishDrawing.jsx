@@ -1564,7 +1564,8 @@ const PublishDrawing = () => {
             setPrevError('');
             setPrevRows([]);
             try {
-              const url = `/api/project-drawings?projectId=${Number(selectedProjectId)}&packageId=${Number(selectedPackageId)}`;
+              // Include full history for modal view
+              const url = `/api/project-drawings?projectId=${Number(selectedProjectId)}&packageId=${Number(selectedPackageId)}&all=1`;
               const r = await fetch(url);
               if (!r.ok) {
                 const t = await r.text().catch(() => '');

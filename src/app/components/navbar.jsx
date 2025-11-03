@@ -3,12 +3,14 @@
 import Link from 'next/link';
 import clsx from 'clsx';
 import React, { useState } from 'react';
+import { useSession } from 'next-auth/react';
 import { signOut } from "next-auth/react";
 import { useRouter } from 'next/navigation';
 
 const Navbar = ({ isLoggedIn = false, adminOnly = false }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const router = useRouter();
+  const { data: session } = useSession();
 
   return (
     <nav
@@ -50,17 +52,77 @@ const Navbar = ({ isLoggedIn = false, adminOnly = false }) => {
             <>
               <li>
                 <span className="block px-4 py-2 text-white font-bold tracking-wide">
-                  Welcome to Steel Vault
+                  {`Welcome to Steel Vault${session?.user?.name ? `, ${session.user.name}` : ''}`}
                 </span>
               </li>
               <li>
                 <button
                   onClick={async () => {
+                    const clearClientData = async () => {
+                      try {
+                        // Clear local/session storage
+                        try { localStorage.clear(); } catch {}
+                        try { sessionStorage.clear(); } catch {}
+
+                        // Clear Cache Storage
+                        if (typeof caches !== 'undefined') {
+                          try {
+                            const keys = await caches.keys();
+                            await Promise.all(keys.map(k => caches.delete(k)));
+                          } catch (e) {}
+                        }
+
+                        // Delete IndexedDB databases (best-effort where supported)
+                        try {
+                          if (indexedDB && indexedDB.databases) {
+                            const dbs = await indexedDB.databases();
+                            await Promise.all(dbs.map(d => new Promise((res) => {
+                              try { indexedDB.deleteDatabase(d.name).onsuccess = () => res(); }
+                              catch { res(); }
+                            })));
+                          }
+                        } catch (e) {}
+
+                        // Unregister service workers
+                        try {
+                          if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+                            const regs = await navigator.serviceWorker.getRegistrations();
+                            await Promise.all(regs.map(r => r.unregister()));
+                          }
+                        } catch (e) {}
+                      } catch (e) {
+                        // swallow
+                      }
+                    };
+
                     try {
-                      await signOut({ callbackUrl: "/" });
-                    } catch {
-                      // Fallback: hard redirect
-                      window.location.href = "/";
+                      // First, call NextAuth signout endpoint so NextAuth clears its own cookies.
+                      try {
+                        await fetch('/api/auth/signout', { method: 'POST' });
+                      } catch (e) {
+                        // ignore - best-effort
+                        console.warn('logout: /api/auth/signout failed', e?.message || e);
+                      }
+
+                      // Then expire any remaining cookies via our logout endpoint (best-effort)
+                      try {
+                        await fetch('/api/auth/logout', { method: 'POST' });
+                      } catch (e) {
+                        console.warn('logout: /api/auth/logout failed', e?.message || e);
+                      }
+
+                      // Also call next-auth signOut client helper (no redirect) to ensure local session state is cleared
+                      try { await signOut({ redirect: false }); } catch (e) {}
+
+                      // Clear client-side caches/storage/IndexedDB/service worker
+                      await clearClientData();
+
+                      // Force a full reload to ensure server-side session checks pick up the cleared cookies
+                      window.location.href = '/';
+                    } catch (err) {
+                      // Fallback: try best-effort cleanup then redirect
+                      try { await clearClientData(); } catch {}
+                      window.location.href = '/';
                     }
                   }}
                   className="block px-4 py-2 text-white hover:text-blue-300 font-bold rounded transition-colors duration-200"

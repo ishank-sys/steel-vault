@@ -71,6 +71,10 @@ async function ensureTable(forceTable) {
       "lastAttachedAt" TIMESTAMPTZ,
       "clientRowId" TEXT,
       meta JSONB,
+      -- Versioning columns (kept optional for compatibility)
+      version INTEGER DEFAULT 1,
+      superseded_by BIGINT,
+      lineage_key TEXT,
       "createdAt" TIMESTAMPTZ DEFAULT NOW(),
       "updatedAt" TIMESTAMPTZ DEFAULT NOW()
     );
@@ -95,6 +99,10 @@ async function ensureTable(forceTable) {
   await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMPTZ DEFAULT NOW();`);
   // Compatibility with Prisma model (drgNo)
   await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "drgNo" TEXT;`);
+  // Versioning support columns (if missing)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1;`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS superseded_by BIGINT;`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS lineage_key TEXT;`);
   try { await prisma.$executeRawUnsafe(`UPDATE "${table}" SET "drgNo" = "drawingNumber" WHERE "drgNo" IS NULL AND "drawingNumber" IS NOT NULL;`); } catch {}
   // Drop NOT NULL on optional columns to avoid 23502 if legacy schema marked them NOT NULL
   try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ALTER COLUMN "packageId" DROP NOT NULL;`); } catch {}
@@ -144,24 +152,112 @@ async function ensureTable(forceTable) {
   try {
     const { lower } = await getColumnsMap(table);
     const projectActual = lower.get('projectid') || lower.get('project_id');
-    const projectQuoted = projectActual ? `"${projectActual}"` : null;
+    const packageActual = lower.get('packageid') || lower.get('package_id');
     const drawingActual = lower.get('drawingnumber') || lower.get('drgno');
-    if (drawingActual) {
+
+    // Drop legacy unique indexes that block history
+    try { await prisma.$executeRawUnsafe(`DROP INDEX IF EXISTS "${table}_unique_conflict";`); } catch {}
+    try { await prisma.$executeRawUnsafe(`DROP INDEX IF EXISTS "${table}_unique_conflict_drgno";`); } catch {}
+    // Also drop potential constraint names created by earlier schemas (both drgNo and drawingNumber variants)
+    try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" DROP CONSTRAINT IF EXISTS "${table}_projectId_drawingNumber_category_key";`); } catch {}
+    try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" DROP CONSTRAINT IF EXISTS "${table}_projectid_drawingnumber_category_key";`); } catch {}
+    try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" DROP CONSTRAINT IF EXISTS "${table}_projectId_drgNo_category_key";`); } catch {}
+    try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" DROP CONSTRAINT IF EXISTS "${table}_projectid_drgno_category_key";`); } catch {}
+    // Best-effort dynamic drop for any unique index on (projectId, drawingNumber, category)
+    try {
+      await prisma.$executeRawUnsafe(`DO $$
+      DECLARE
+        rec RECORD;
+      BEGIN
+        FOR rec IN (
+          SELECT i.indexname AS name
+          FROM pg_indexes i
+          WHERE i.schemaname = 'public' AND i.tablename = '${table}'
+            AND (i.indexdef ILIKE '%("projectId", "drawingNumber", "category")%'
+              OR i.indexdef ILIKE '%(projectId, drawingNumber, category)%')
+        ) LOOP
+          EXECUTE format('DROP INDEX IF EXISTS %I', rec.name);
+        END LOOP;
+      END$$;`);
+    } catch {}
+    // Dynamic drop for any unique index on (projectId, drgNo, category)
+    try {
+      await prisma.$executeRawUnsafe(`DO $$
+      DECLARE
+        rec RECORD;
+      BEGIN
+        FOR rec IN (
+          SELECT i.indexname AS name
+          FROM pg_indexes i
+          WHERE i.schemaname = 'public' AND i.tablename = '${table}'
+            AND (i.indexdef ILIKE '%("projectId", "drgNo", "category")%'
+              OR i.indexdef ILIKE '%(projectId, drgNo, category)%')
+        ) LOOP
+          EXECUTE format('DROP INDEX IF EXISTS %I', rec.name);
+        END LOOP;
+      END$$;`);
+    } catch {}
+    // And any unique constraint referencing the same three columns
+    try {
+      await prisma.$executeRawUnsafe(`DO $$
+      DECLARE
+        rec RECORD;
+      BEGIN
+        FOR rec IN (
+          SELECT conname AS name
+          FROM pg_constraint c
+          JOIN pg_class t ON t.oid = c.conrelid
+          WHERE c.contype = 'u' AND t.relname = '${table}'
+            AND pg_get_constraintdef(c.oid) ILIKE '%("projectId", "drawingNumber", "category")%'
+        ) LOOP
+          BEGIN
+            EXECUTE format('ALTER TABLE "${table}" DROP CONSTRAINT %I', rec.name);
+          EXCEPTION WHEN others THEN NULL;
+          END;
+        END LOOP;
+      END$$;`);
+    } catch {}
+    try {
+      await prisma.$executeRawUnsafe(`DO $$
+      DECLARE
+        rec RECORD;
+      BEGIN
+        FOR rec IN (
+          SELECT conname AS name
+          FROM pg_constraint c
+          JOIN pg_class t ON t.oid = c.conrelid
+          WHERE c.contype = 'u' AND t.relname = '${table}'
+            AND pg_get_constraintdef(c.oid) ILIKE '%("projectId", "drgNo", "category")%'
+        ) LOOP
+          BEGIN
+            EXECUTE format('ALTER TABLE "${table}" DROP CONSTRAINT %I', rec.name);
+          EXCEPTION WHEN others THEN NULL;
+          END;
+        END LOOP;
+      END$$;`);
+    } catch {}
+
+    // Create partial unique index to allow history but enforce a single ACTIVE (non-superseded) row per key
+    if (projectActual && drawingActual) {
+      const projectQuoted = `"${projectActual}"`;
       const drawingQuoted = `"${drawingActual}"`;
-      const conflictCols = [projectQuoted, drawingQuoted, catQuoted].filter(Boolean).join(', ');
-      if (conflictCols) {
+      if (packageActual) {
         await prisma.$executeRawUnsafe(`
-          CREATE UNIQUE INDEX IF NOT EXISTS "${table}_unique_conflict"
-          ON "${table}" (${conflictCols});
+          CREATE UNIQUE INDEX IF NOT EXISTS "${table}_active_unique_key"
+          ON "${table}" (${projectQuoted}, "${packageActual}", ${drawingQuoted})
+          WHERE superseded_by IS NULL;
+        `);
+      } else {
+        await prisma.$executeRawUnsafe(`
+          CREATE UNIQUE INDEX IF NOT EXISTS "${table}_active_unique_key_no_pkg"
+          ON "${table}" (${projectQuoted}, ${drawingQuoted})
+          WHERE superseded_by IS NULL;
         `);
       }
-      // Also ensure unique index for (projectId, drgNo, category) to support Prisma upsert
-      const drgNoActual = lower.get('drgno');
-      if (drgNoActual && projectQuoted) {
-        await prisma.$executeRawUnsafe(`
-          CREATE UNIQUE INDEX IF NOT EXISTS "${table}_unique_conflict_drgno"
-          ON "${table}" (${projectQuoted}, "${drgNoActual}", ${catQuoted});
-        `);
+      // Helpful supporting indexes
+      try { await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "${table}_project_idx" ON "${table}" (${projectQuoted});`); } catch {}
+      if (packageActual) {
+        try { await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "${table}_package_idx" ON "${table}" ("${packageActual}");`); } catch {}
       }
     }
   } catch (e) {
@@ -175,6 +271,7 @@ export async function GET(req) {
     const projectId = Number(searchParams.get('projectId'));
   const packageId = searchParams.get('packageId') != null ? Number(searchParams.get('packageId')) : null;
   const hasFinitePackage = packageId != null && Number.isFinite(packageId);
+    const all = searchParams.get('all'); // when truthy, include history (superseded rows)
     const drawingFilter = searchParams.get('drawing');
     if (!Number.isFinite(projectId)) {
       return NextResponse.json({ error: 'projectId is required' }, { status: 400 });
@@ -186,11 +283,16 @@ export async function GET(req) {
     const drawingQuoted = drawingActual ? `"${drawingActual}"` : '"drawingNumber"';
     const projectActual = lower.get('projectid') || lower.get('project_id');
     const packageActual = lower.get('packageid') || lower.get('package_id');
+    const hasSupersede = lower.has('superseded_by');
     const whereParts = [];
     const args = [];
     let idx = 1;
   if (projectActual) { whereParts.push(`"${projectActual}" = $${idx++}`); args.push(projectId); }
   if (hasFinitePackage && packageActual) { whereParts.push(`"${packageActual}" = $${idx++}`); args.push(packageId); }
+    // Default to only ACTIVE (non-superseded) rows unless ?all=1
+    if (hasSupersede && !(all === '1' || all === 'true' || all === 'yes')) {
+      whereParts.push(`superseded_by IS NULL`);
+    }
     // Optional drawing equality filter on either drawingNumber or drgNo
     if (drawingFilter) {
       const drawingActual = lower.get('drawingnumber') || lower.get('drgno');
@@ -254,42 +356,14 @@ export async function POST(req) {
     const metadataActual = lower.get('metadata');
     const titleActual = lower.get('title');
     const statusActual = lower.get('status');
-    const clientQuoted = clientActual ? `"${clientActual}"` : null;
-    const projectQuoted = projectActual ? `"${projectActual}"` : null;
-    const packageQuoted = packageActual ? `"${packageActual}"` : null;
-    const metadataQuoted = metadataActual ? `"${metadataActual}"` : null;
-    const titleQuoted = titleActual ? `"${titleActual}"` : null;
-    const statusQuoted = statusActual ? `"${statusActual}"` : null;
+    const hasDrgNo = !!lower.get('drgno');
+    const hasSupersede = lower.has('superseded_by');
 
-    // Prepare a consistent insert column list
-    const insertColsRaw = [
-      clientQuoted,
-      projectQuoted,
-      packageQuoted, // may be null; we'll still include and pass null values
-      drawingQuoted,
-      catQuoted,
-      titleQuoted,   // optional
-      'revision',
-      '"issueDate"',
-      '"fileName"',
-      ...(lower.get('drgno') ? ['"drgNo"'] : []),
-      statusQuoted,  // optional
-      metadataQuoted, // optional
-      'meta',
-      '"lastAttachedAt"',
-      '"clientRowId"'
-    ].filter(Boolean);
-
-    const conflictCols = [projectQuoted, drawingQuoted, catQuoted].filter(Boolean);
-    if (conflictCols.length < 3) {
-      return NextResponse.json({ error: 'Missing conflict columns' }, { status: 500 });
-    }
-
-    // Normalize and validate entries once
+    // Normalize input entries
     const norm = entries.map((e) => {
       const drawingKey = String(e?.drawingNumber ?? e?.drawingNo ?? e?.drgNo ?? '').trim();
-      const category = String(e?.category ?? '').trim();
       if (!drawingKey) return null;
+      const category = String(e?.category ?? '').trim();
       const revision = (e?.rev ?? e?.revision ?? null);
       const revisionTrimmed = typeof revision === 'string' ? revision.trim() : revision;
       const issueDate = e?.issueDate ? String(e.issueDate) : today;
@@ -300,92 +374,74 @@ export async function POST(req) {
       const statusVal = 'IN_PROGRESS';
       const metadataVal = { fileNames: fileNamesArr, revision: revisionTrimmed ?? null, issueDate };
       return {
-        drawingKey,
-        category,
-        revision: revisionTrimmed,
-        issueDate,
-        fileNamesStr,
-        fileNamesArr,
-        clientRowId,
-        titleVal,
-        statusVal,
-        metadataVal,
+        drawingKey, category, revision: revisionTrimmed, issueDate,
+        fileNamesStr, fileNamesArr, clientRowId, titleVal, statusVal, metadataVal,
       };
     }).filter(Boolean);
 
-    if (!norm.length) {
-      return NextResponse.json({ error: 'No valid entries to insert' }, { status: 400 });
+    if (!norm.length) return NextResponse.json({ error: 'No valid entries to insert' }, { status: 400 });
+
+    let created = 0;
+    let superseded = 0;
+
+    for (const r of norm) {
+      await prisma.$transaction(async (tx) => {
+        // 1) Find existing ACTIVE row for this (projectId, packageId, drawing) and lock it
+        const whereParts = [];
+        const args = [];
+        let idx = 1;
+        if (projectActual) { whereParts.push(`"${projectActual}" = $${idx++}`); args.push(projectId); }
+        if (packageActual) {
+          if (packageId == null) { whereParts.push(`"${packageActual}" IS NULL`); }
+          else { whereParts.push(`"${packageActual}" = $${idx++}`); args.push(packageId); }
+        }
+        whereParts.push(`${drawingQuoted} = $${idx++}`); args.push(r.drawingKey);
+        if (hasSupersede) whereParts.push(`superseded_by IS NULL`);
+        const whereSql = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
+        const existingRows = await tx.$queryRawUnsafe(`SELECT id FROM "${table}" ${whereSql} FOR UPDATE`, ...args);
+        const prevId = Array.isArray(existingRows) && existingRows[0] ? Number(existingRows[0].id) : null;
+
+        // 2) If previous exists, mark it temporarily as non-active to satisfy partial unique index
+        if (prevId && hasSupersede) {
+          await tx.$executeRawUnsafe(`UPDATE "${table}" SET superseded_by = -1, "status" = 'SUSPENDED', "updatedAt" = NOW() WHERE id = $1`, prevId);
+        }
+
+        // 3) Insert new ACTIVE row
+        const cols = [];
+        const vals = [];
+        const params = [];
+        const push = (val, cast) => { const i = params.length + 1; params.push(val); vals.push(cast ? `$${i}::${cast}` : `$${i}`); };
+
+        if (clientActual) cols.push(`"${clientActual}"`), push(clientId);
+        if (projectActual) cols.push(`"${projectActual}"`), push(projectId);
+        if (packageActual) cols.push(`"${packageActual}"`), push(packageId);
+        cols.push(drawingQuoted); push(r.drawingKey);
+        cols.push(catQuoted); push(r.category);
+        if (titleActual) cols.push(`"${titleActual}"`), push(r.titleVal);
+        cols.push('revision'); push(r.revision);
+        cols.push('"issueDate"'); push(r.issueDate, 'date');
+        cols.push('"fileName"'); push(r.fileNamesStr);
+        if (hasDrgNo) cols.push('"drgNo"'), push(r.drawingKey);
+        if (statusActual) cols.push(`"${statusActual}"`), push(r.statusVal);
+        if (metadataActual) cols.push(`"${metadataActual}"`), push(JSON.stringify(r.metadataVal), 'jsonb');
+        cols.push('meta'); push(JSON.stringify({ fileNames: r.fileNamesArr }), 'jsonb');
+        cols.push('"lastAttachedAt"'); push(nowIso, 'timestamptz');
+        cols.push('"clientRowId"'); push(r.clientRowId);
+
+        const insertSql = `INSERT INTO "${table}" (${cols.join(', ')}) VALUES (${vals.join(', ')}) RETURNING id;`;
+        const ins = await tx.$queryRawUnsafe(insertSql, ...params);
+        const newId = Array.isArray(ins) && ins[0] ? Number(ins[0].id) : null;
+        if (newId) created++;
+
+        // 4) Finalize supersede: set previous.superseded_by = newId
+        if (newId && prevId && hasSupersede) {
+          await tx.$executeRawUnsafe(`UPDATE "${table}" SET superseded_by = $1, "updatedAt" = NOW() WHERE id = $2`, newId, prevId);
+          superseded++;
+        }
+      });
     }
 
-    // Build VALUES tuples with numbered placeholders to avoid SQL object stringification issues
-    const params = [];
-    const hasClient = !!clientQuoted;
-    const hasProject = !!projectQuoted;
-    const hasPackage = !!packageQuoted;
-    const hasTitle = !!titleQuoted;
-    const hasDrgNo = !!lower.get('drgno');
-    const hasStatus = !!statusQuoted;
-    const hasMetadata = !!metadataQuoted;
-
-    const pushParam = (val, cast) => {
-      const idx = params.length + 1;
-      params.push(val);
-      return cast ? `$${idx}::${cast}` : `$${idx}`;
-    };
-
-    const valueTuplesSql = norm.map((r) => {
-      const parts = [];
-      if (hasClient) parts.push(pushParam(clientId));
-      if (hasProject) parts.push(pushParam(projectId));
-      if (hasPackage) parts.push(pushParam(packageId));
-      parts.push(pushParam(r.drawingKey));
-      parts.push(pushParam(r.category));
-      if (hasTitle) parts.push(pushParam(r.titleVal));
-      parts.push(pushParam(r.revision));
-      parts.push(pushParam(r.issueDate, 'date'));
-      parts.push(pushParam(r.fileNamesStr));
-      if (hasDrgNo) parts.push(pushParam(r.drawingKey));
-      if (hasStatus) parts.push(pushParam(r.statusVal));
-      if (hasMetadata) parts.push(pushParam(JSON.stringify(r.metadataVal), 'jsonb'));
-      parts.push(pushParam(JSON.stringify({ fileNames: r.fileNamesArr }), 'jsonb'));
-      parts.push(pushParam(nowIso, 'timestamptz'));
-      parts.push(pushParam(r.clientRowId));
-      return `(${parts.join(', ')})`;
-    }).join(', ');
-
-    const insertColsSql = insertColsRaw.join(', ');
-    const conflictSql = conflictCols.join(', ');
-
-    const updateSets = [
-      `${catQuoted} = EXCLUDED.${catQuoted}`,
-      ...(titleQuoted ? [`${titleQuoted} = EXCLUDED.${titleQuoted}`] : []),
-      `revision = EXCLUDED.revision`,
-      `"issueDate" = EXCLUDED."issueDate"`,
-      `"fileName" = EXCLUDED."fileName"`,
-      ...(statusQuoted ? [`${statusQuoted} = EXCLUDED.${statusQuoted}`] : []),
-      ...(metadataQuoted ? [`${metadataQuoted} = EXCLUDED.${metadataQuoted}`] : []),
-      `meta = EXCLUDED.meta`,
-      `"lastAttachedAt" = EXCLUDED."lastAttachedAt"`,
-      `"updatedAt" = NOW()`
-    ];
-    if (packageQuoted) {
-      // Update packageId on conflict when provided; keep existing when not
-      updateSets.splice(3, 0, `${packageQuoted} = COALESCE(EXCLUDED.${packageQuoted}, "${table}".${packageQuoted})`);
-    }
-
-    const sql = `
-      INSERT INTO "${table}" (${insertColsSql})
-      VALUES ${valueTuplesSql}
-      ON CONFLICT (${conflictSql})
-      DO UPDATE SET ${updateSets.join(', ')}
-      RETURNING (xmax = 0) AS inserted;
-    `;
-
-    const result = await prisma.$queryRawUnsafe(sql, ...params);
-    const total = Array.isArray(result) ? result.length : 0;
-    const created = Array.isArray(result) ? result.filter((r) => r?.inserted === true).length : 0;
-    const updated = Math.max(total - created, 0);
-    return NextResponse.json({ success: true, created, updated, total });
+    return NextResponse.json({ success: true, created, superseded, total: created });
   } catch (e) {
     console.error('/api/project-drawings POST error:', e?.message || e);
     return NextResponse.json({ error: e?.message || 'Unexpected error' }, { status: 500 });

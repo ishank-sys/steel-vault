@@ -36,9 +36,13 @@ export default function Dashboard() {
             // Only show projects where solTL.id === user.id
             projects = (projects || []).filter(p => p.solTL?.id === userData.id);
           } else if (type.includes('client')) {
-            // Only show projects where client.id === user.client.id
-            const clientId = userData.client?.id || userData.clientId;
-            projects = (projects || []).filter(p => p.client?.id === clientId);
+            // Client users should see projects where Project.clientPm === logged-in user's id
+            const uid = Number(userData.id);
+            projects = (projects || []).filter(p => {
+              // support numeric or string stored clientPm
+              const pm = p?.clientPm ?? p?.clientPM ?? p?.clientpm ?? p?.client_pm;
+              return pm != null && Number(pm) === uid;
+            });
           }
           // admin sees all
         }
