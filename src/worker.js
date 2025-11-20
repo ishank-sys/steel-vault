@@ -15,7 +15,7 @@ async function processOneJob() {
   });
   if (!job) return null;
 
-  console.log("[dbWorker] picked job", job.id, job.type);
+  console.log("[WORKER] picked job", job.id, job.type);
   try {
     await prisma.job.update({
       where: { id: job.id },
@@ -39,10 +39,10 @@ async function processOneJob() {
       where: { id: job.id },
       data: { status: "succeeded", result: result, progress: 100 },
     });
-    console.log("[dbWorker] job succeeded", job.id, job.type);
+    console.log("[WORKER] job succeeded", job.id, job.type);
     return job.id;
   } catch (err) {
-    console.error("[dbWorker] job failed", job.id, err?.message || err);
+    console.error("[WORKER] job failed", job.id, err?.message || err);
     const attempts = (job.attempts || 0) + 1;
     const maxAttempts = job.maxAttempts || 5;
     const status = attempts >= maxAttempts ? "failed" : "queued";
@@ -62,14 +62,17 @@ async function pollLoop() {
         await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
       }
     } catch (e) {
-      console.error("[dbWorker] poll error", e?.message || e);
+      console.error("[WORKER] poll error", e?.message || e);
       await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
     }
   }
 }
 
-if (require.main === module) {
-  console.log("[dbWorker] starting worker poll loop...");
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+if (process.argv[1] === __filename) {
+  console.log("[WORKER] starting worker poll loop...");
   pollLoop();
 }
 

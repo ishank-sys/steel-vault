@@ -7,6 +7,8 @@
     "postinstall": "prisma generate",
     "build": "prisma generate && next build",
     "start": "next start",
+    "start:worker": "node --loader tsconfig-paths/esm-loader -e \"import('./src/worker.js')\"",
+    "dev:worker": "node --watch --loader tsconfig-paths/esm-loader -e \"import('./src/worker.js')\"",
     "lint": "next lint",
     "seed": "prisma db seed"
   },
