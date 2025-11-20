@@ -1,6 +1,7 @@
 {
   "name": "my-app",
   "version": "0.1.0",
+  "type": "module",
   "private": true,
   "scripts": {
     "dev": "set NEXT_WEBPACK_FORCE=1 && next dev",
