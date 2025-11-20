@@ -1,8 +1,6 @@
 'use client';
 
 import React, { useRef, useState, useCallback } from 'react';
-import * as XLSX from 'xlsx';
-import { saveAs } from 'file-saver';
 import useDrawingStore from '../../../../src/stores/useDrawingStore';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
