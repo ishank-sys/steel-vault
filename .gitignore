@@ -30,12 +30,8 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
-
 # stricter env/secret ignores
 *.env
-*.env.*
 *.key
 *.pem
 *.p12
