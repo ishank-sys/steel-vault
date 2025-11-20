@@ -1,5 +1,5 @@
 import archiver from 'archiver';
-import { getGCSStorage } from '@/lib/gcs.js';
+import { getGCSStorage } from '../gcs.js';
 
 export async function handleGenerateZip(job, prisma) {
   const payload = job.payload || {};
