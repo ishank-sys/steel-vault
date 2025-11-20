@@ -122,3 +122,18 @@ model ProjectDrawing {
 
   @@unique([projectId, drgNo, category])
 }
+
+// Background job queue table for DB-poller worker
+model Job {
+  id          Int      @id @default(autoincrement())
+  type        String   // parse-excel | validate-conflicts | publish-job | generate-zip
+  status      String   @default("queued") // queued | running | succeeded | failed
+  payload     Json
+  result      Json?
+  progress    Int?     @default(0)
+  attempts    Int      @default(0)
+  maxAttempts Int      @default(5)
+  error       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

@@ -804,129 +804,61 @@ const handlePublish = async () => {
     const pkgIdResolved = await resolvePackageId(projectIdToSend);
 
     if (entriesToUpsert.length > 0) {
-      const up = await fetch('/api/project-drawings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          clientId: Number(clientId),
-          projectId: Number(projectIdToSend),
-          packageId: pkgIdResolved,
-          entries: entriesToUpsert,
-        })
+      // Enqueue publish-job only (no fallback to direct upsert). Worker owns DB writes.
+      const enqueueResp = await fetch('/api/jobs/enqueue', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'publish-job', payload: { clientId: Number(clientId), projectId: Number(projectIdToSend), packageId: pkgIdResolved, drawings: entriesToUpsert } })
       });
-      const upJson = await up.json().catch(() => ({}));
-      if (!up.ok) {
-        console.warn('ProjectDrawing upsert failed', up.status, upJson);
-        alert(`Failed to save drawings to ProjectDrawing: ${upJson?.error || up.statusText}`);
-      } else {
-        console.log('ProjectDrawing upserts:', upJson);
-      }
+      if (!enqueueResp.ok) throw new Error('Failed to enqueue publish-job');
+      const { jobId: publishJobId } = await enqueueResp.json();
+      console.log('Enqueued publish-job', publishJobId);
     } else {
-      console.log('No drawings with files selected to publish; skipping DB upsert.');
+      console.log('No drawings with files selected to publish; skipping publish-job enqueue.');
     }
 
-    // Create PDF + Excel + ZIP (same as download) and then upload via /api/upload (multipart)
-    const doc = new jsPDF('p', 'pt', 'a4');
-    let y = 40;
-    doc.setFontSize(14);
-    doc.text('STRUCTURES ONLINE', 40, y);
-    doc.setFontSize(10);
-    doc.text('C 56A/27, Sec-62, Noida-201307', 40, y + 15);
-    doc.text('Tel:+911202403056, www.structuresonline.net', 40, y + 30);
-    doc.text('E:mail: mahesh_teli@sol-mail.net', 40, y + 45);
-    doc.setFontSize(16);
-    doc.text('LETTER OF TRANSMITTAL', 350, y + 10);
-    y += 80;
-    const todayDate = new Date();
-    const formattedDate = `${String(todayDate.getMonth() + 1).padStart(2, '0')}-${String(todayDate.getDate()).padStart(2, '0')}-${todayDate.getFullYear()}`;
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`PROJECT NAME: ${projectName}`, 40, y + 30);
-    doc.text(`DATE: ${formattedDate}`, 350, y);
-    let grouped = {};
-    tableDrawings.forEach(item => {
-      const desc = item.void ? `${item.desc} [VOID]` : item.desc;
-      if (!grouped[desc]) grouped[desc] = [];
-      grouped[desc].push(item.drawingNo);
-    });
-    const pdfTableHeaders = [['REV. REMARK', 'SHEET TITLE', 'SHEET NAME', 'SHEET QTY']];
-    const pdfTableData = Object.entries(grouped).map(([desc, drawingNos]) => [
-      'ISSUED FOR APPROVAL',
-      desc,
-      drawingNos.join(', '),
-      drawingNos.length
-    ]);
-    autoTable(doc, { startY: y + 60, head: pdfTableHeaders, body: pdfTableData, styles: { fontSize: 10, cellPadding: 4 }, headStyles: { fillColor: [0, 112, 192] }, theme: 'grid' });
-    const pdfBlob = doc.output('blob');
-
-    const wb = XLSX.utils.book_new();
-    const headerSheetData = [["PROJECT NAME:", projectName]];
-    const tableSheetData = (selectedDrawings || []).map((d, i) => [i + 1, d.itemName || d.item || '-', d.drawingNo || d.drgNo || '-', d.rev || '']);
-    const finalSheetData = [...headerSheetData, ...tableSheetData];
-    const ws = XLSX.utils.aoa_to_sheet(finalSheetData);
-    XLSX.utils.book_append_sheet(wb, ws, "Transmittal");
-    const excelBlob = new Blob([XLSX.write(wb, { bookType: "xlsx", type: "array" })], { type: "application/octet-stream" });
-
-    const zip = new JSZip();
-    const rootFolder = zip.folder("Drawing");
-    (storeDrawings || []).forEach(d => {
-      if (d.attachedPdfs && d.attachedPdfs.length) {
-        const folderName = d.category || 'Other Drawings';
-        const subFolder = rootFolder.folder(folderName);
-        d.attachedPdfs.forEach(file => {
-          const actualFile = file?.file || file;
-          subFolder.file(actualFile.name, actualFile);
-        });
-      }
-    });
-    const addToZipByExtension = (filesArray) => {
-      if (!filesArray || !filesArray.length) return;
-      filesArray.forEach((file) => {
-        if (!file?.file && !(file instanceof File)) return;
-        const actualFile = file?.file || file;
-        const ext = actualFile.name.split('.').pop()?.toUpperCase() || "UNKNOWN";
-        const extFolder = zip.folder(ext);
-        extFolder.file(actualFile.name, actualFile);
-      });
-    };
-    addToZipByExtension(approvedExtras);
-    addToZipByExtension(approvedModels);
-  // Naming:  DDMMYY_<ProjectName>_DrawingTransmittalLog
-  const transBaseNamePub = (transmittalName && transmittalName.trim()) || makeLogBase('DrawingTransmittalLog');
-  zip.file(`${transBaseNamePub}.pdf`, pdfBlob);
-  zip.file(`${transBaseNamePub}.xlsx`, excelBlob);
-    // Optional: add Complete Log if enabled
-    if (completeLogEnabled) {
-      try {
-        const completeBlob = await createCompleteLogBlob(Number(projectIdToSend), pkgIdResolved);
-        const completeBaseName = makeLogBase('DrawingCompleteLog');
-        zip.file(`${completeBaseName}.xlsx`, completeBlob);
-      } catch (e) {
-        console.warn('Complete Log generation (publish) skipped:', e?.message || e);
-      }
-    }
-
-    const content = await zip.generateAsync({ type: "blob" });
-    const zipFileName = `${zipName || 'Transmittal'}.zip`;
-    const zipFile = new File([content], zipFileName, { type: 'application/zip' });
-
-    // Upload to GCS using signed URL; then log via /api/upload (JSON)
+    // Upload each attached PDF to GCS first so worker can include them in the server-side ZIP.
     setUploadPhase('uploading');
-    const res = await uploadToGCSDirect(zipFile, {
-      clientId: Number(clientId),
-      projectId: Number(projectIdToSend),
-      packageId: pkgIdResolved || undefined,
-      packageName: selectedPackageName || undefined,
-      onProgress: setUploadProgress,
+    const uploadedObjectPaths = [];
+    const allFilesToUpload = [];
+    // Collect files from storeDrawings attachments
+    (storeDrawings || []).forEach(d => {
+      if (Array.isArray(d.attachedPdfs) && d.attachedPdfs.length) {
+        const file = d.attachedPdfs[0]?.file || d.attachedPdfs[0];
+        if (file instanceof File) allFilesToUpload.push({ file, drawing: d });
+      }
     });
 
-    const summary = {
-      name: zipFileName,
-      clientId: Number(clientId),
-      projectId: Number(projectIdToSend),
-      uploadTime: (res?.record?.uploadedAt || new Date().toISOString())
-    };
-    setPublishResult({ success: true, data: res, summary });
+    // Upload files sequentially (to limit parallel uploads) and collect storage paths
+    for (const entry of allFilesToUpload) {
+      try {
+        const uploadRes = await uploadToGCSDirect(entry.file, { clientId: Number(clientId), projectId: Number(projectIdToSend), packageId: pkgIdResolved || undefined });
+        if (uploadRes?.record?.storagePath) uploadedObjectPaths.push(uploadRes.record.storagePath);
+      } catch (e) {
+        console.warn('Failed to upload attachment for drawing', entry.drawing?.drgNo, e?.message || e);
+        // Continue uploading others; worker will skip missing ones
+      }
+    }
+
+    // Enqueue server-side generate-zip with uploaded object paths; worker will produce final ZIP and log it
+    const genResp = await fetch('/api/jobs/enqueue', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'generate-zip', payload: { clientId: Number(clientId), projectId: Number(projectIdToSend), objectPaths: uploadedObjectPaths, zipName: zipName } })
+    });
+    if (!genResp.ok) throw new Error('Failed to enqueue generate-zip');
+    const { jobId: genJobId } = await genResp.json();
+    // Poll for generate-zip completion and show result (awaited)
+    let jobResult = null;
+    for (;;) {
+      const s = await fetch(`/api/jobs/${genJobId}`);
+      if (!s.ok) throw new Error('Job status fetch failed');
+      const js = await s.json();
+      const job = js.job;
+      if (!job) throw new Error('No job');
+      if (job.status === 'succeeded') { jobResult = job.result; break; }
+      if (job.status === 'failed') throw new Error(job.error || 'generate-zip failed');
+      await new Promise(r => setTimeout(r, 1500));
+    }
+    setPublishResult({ success: true, data: jobResult, summary: { name: jobResult?.fileName || zipName, projectId: projectIdToSend } });
     setShowPublishModal(true);
 
     // Optional email notification

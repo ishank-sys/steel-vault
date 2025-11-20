@@ -253,66 +253,28 @@ const PublishDrawing = () => {
       if (!selectedProjectId || !selectedPackageId) { setPrevRevMap({}); setPrevRevError(''); setPrevRevHasFetched(false); return; }
       setPrevRevLoading(true); setPrevRevError(''); setPrevRevHasFetched(false);
       try {
-        const url = `/api/project-drawings?projectId=${Number(selectedProjectId)}&packageId=${Number(selectedPackageId)}`;
-        const r = await fetch(url, { cache: 'no-store' });
-        if (!r.ok) throw new Error(`Failed to load prev revisions (${r.status})`);
-        const arr = await r.json();
-        // Keep full rows for modal and to enrich prevRevMap
-        if (!cancelled) setPrevRows(Array.isArray(arr) ? arr : []);
-        const map = {};
-        if (Array.isArray(arr)) {
-          // Choose latest by updatedAt or lastAttachedAt
-          for (const row of arr) {
-            const dr = row?.drawingNumber ?? row?.drgNo ?? row?.drg_no;
-            if (!dr) continue;
-            const catRaw = row?.category ?? row?.Category ?? '';
-            const { normDr, normCat, key } = normalizeDrawingKey(dr, catRaw);
-            const ts = new Date(row?.updatedAt || row?.updated_at || row?.lastAttachedAt || row?.lastattachedat || 0).getTime();
-            const prev = map[key];
-            if (!prev || ts > prev._ts) {
-              const revVal = String(row?.revision ?? row?.rev ?? '').trim();
-              map[key] = { rev: revVal, _ts: ts };
-              // also store a category-agnostic fallback for this drawing number
-              const keyNoCat = normDr;
-              const prev2 = map[keyNoCat];
-              if (!prev2 || ts > prev2._ts) {
-                map[keyNoCat] = { rev: revVal, _ts: ts };
-              }
-              // filename-based mapping (from metadata/meta.fileNames or fileName list)
-              const collectNames = () => {
-                const acc = [];
-                const md = row?.metadata;
-                if (md) {
-                  try {
-                    const obj = typeof md === 'string' ? JSON.parse(md) : md;
-                    if (obj && Array.isArray(obj.fileNames)) acc.push(...obj.fileNames);
-                  } catch {}
-                }
-                const m2 = row?.meta;
-                if (m2) {
-                  try {
-                    const obj2 = typeof m2 === 'string' ? JSON.parse(m2) : m2;
-                    if (obj2 && Array.isArray(obj2.fileNames)) acc.push(...obj2.fileNames);
-                  } catch {}
-                }
-                const fn = row?.fileName;
-                if (typeof fn === 'string' && fn.trim()) acc.push(...fn.split(/\s*,\s*/).filter(Boolean));
-                return acc;
-              };
-              const fns = collectNames();
-              for (const name of fns) {
-                const k = `file::${String(name).trim().toLowerCase()}`;
-                const prevF = map[k];
-                if (!prevF || ts > prevF._ts) map[k] = { rev: revVal, _ts: ts };
-              }
-            }
-          }
+        // Enqueue a validate-conflicts job which returns prevRevMap and rows when fetchAll=true
+        const payload = { projectId: Number(selectedProjectId), packageId: Number(selectedPackageId), fetchAll: true };
+        const enq = await fetch('/api/jobs/enqueue', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'validate-conflicts', payload }) });
+        if (!enq.ok) throw new Error(`Failed to enqueue validate-conflicts (${enq.status})`);
+        const { jobId } = await enq.json();
+        let jobRes = null;
+        // Poll for up to 60 seconds
+        for (let i = 0; i < 60; i++) {
+          if (cancelled) break;
+          await new Promise(r => setTimeout(r, 1000));
+          const s = await fetch(`/api/jobs/${jobId}`);
+          if (!s.ok) continue;
+          const j = await s.json();
+          if (j.status === 'succeeded') { jobRes = j; break; }
+          if (j.status === 'failed') throw new Error('validate-conflicts job failed');
         }
+        if (!jobRes || !jobRes.result) throw new Error('validate-conflicts job timed out');
+        const prev = jobRes.result.prevRevMap || {};
+        const rows = Array.isArray(jobRes.result.rows) ? jobRes.result.rows : [];
         if (!cancelled) {
-          // Strip helper _ts
-          const out = {};
-          for (const k of Object.keys(map)) out[k] = map[k].rev ?? '';
-          setPrevRevMap(out);
+          setPrevRows(rows);
+          setPrevRevMap(prev);
         }
       } catch (e) {
         if (!cancelled) setPrevRevError(e?.message || 'Failed loading previous revisions');
@@ -811,59 +773,33 @@ const PublishDrawing = () => {
     // Keep actual File objects to include in ZIP later
     setUploadedExcelFiles(prev => [...safeArr(prev), ...files]);
 
-    const allParsed = [];
-    files.forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = (evt) => {
-        const wb = XLSX.read(evt.target.result, { type: "binary" });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
-
-        const headerIndex = data.findIndex((row) =>
-          row.some((cell) => typeof cell === "string" && cell.toLowerCase().includes("dr no"))
-        );
-        if (headerIndex === -1) {
-          alert(`Couldn't find header row in ${file.name}`);
+    // Enqueue parse-excel job on server so CPU parsing is offloaded to worker
+    files.forEach(async (file) => {
+      // Always enqueue parse-excel; worker does parsing on server
+      const arrayBuffer = await file.arrayBuffer();
+      const b64 = Buffer.from(arrayBuffer).toString('base64');
+      const payload = { projectId: selectedProjectId, clientId: selectedClientId, originalName: file.name, uploaderId: user?.id || null, fileBase64: b64 };
+      const resp = await fetch('/api/jobs/enqueue', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'parse-excel', payload }) });
+      if (!resp.ok) throw new Error('Failed to enqueue parse job');
+      const { jobId } = await resp.json();
+      // Poll job status until succeeded or failed
+      const poll = async () => {
+        const s = await fetch(`/api/jobs/${jobId}`);
+        if (!s.ok) throw new Error('Job status fetch failed');
+        const js = await s.json();
+        const job = js.job;
+        if (!job) throw new Error('No job');
+        if (job.status === 'succeeded') {
+          const rows = job.result?.rows || [];
+          setExcelFileData((prev) => [...prev, ...rows]);
           return;
         }
-
-        const header = data[headerIndex].map((cell) =>
-          typeof cell === "string" ? cell.trim().toLowerCase() : ""
-        );
-
-        const drgNoIndex = header.findIndex((col) => col.includes("dr no"));
-        const itemIndex = header.findIndex((col) => col.includes("description"));
-        const revIndex = header.findIndex((col) => col.includes("rev"));
-        const statusIndex = header.findIndex((col) => col.includes("rev remarks"));
-        const modelerIndex = header.findIndex((col) => col.includes("mod by"));
-        const detailerIndex = header.findIndex((col) => col.includes("dr by"));
-        const checkerIndex = header.findIndex((col) => col.includes("ch by"));
-        const categoryIndex = header.findIndex((col) => col.includes("category"));
-
-        const rows = data.slice(headerIndex + 1).filter((row) => row.length);
-
-        const parsed = rows.map((row, i) => ({
-          id: crypto.randomUUID(),
-          slno: drawings.length + allParsed.length + i + 1,
-          drgNo: row[drgNoIndex] || "-",
-          item: row[itemIndex] || "-",
-          rev: row[revIndex] !== undefined && row[revIndex] !== null && row[revIndex] !== "" ? String(row[revIndex]) : "-",
-          modeler: row[modelerIndex] || "-",
-          detailer: row[detailerIndex] || "-",
-          checker: row[checkerIndex] || "-",
-          status: row[statusIndex] || "-",
-          category: row[categoryIndex] || "",
-          view: "View",
-          attachedPdfs: [],
-          conflict: "--- No approval sent before",
-          attachConflict: "",
-        }));
-
-        allParsed.push(...parsed);
-        setExcelFileData((prev) => [...prev, ...parsed]);
+        if (job.status === 'failed') {
+          throw new Error(job.error || 'Parse job failed');
+        }
+        setTimeout(poll, 1000);
       };
-
-      reader.readAsBinaryString(file);
+      poll();
     });
   }, [drawings.length, selectedClientId, selectedProjectId, selectedPackageId]);
 
@@ -1038,26 +974,20 @@ const PublishDrawing = () => {
     setPendingExtraFiles([]);
     if (pdfDrawingsInputRef.current) pdfDrawingsInputRef.current.value = "";
 
-    // Fire-and-forget logging to ProjectDrawing for matched files
+    // Fire-and-forget: enqueue publish-job so worker logs these matched files
     (async () => {
       try {
         const cid = selectedClientId != null && /^\d+$/.test(String(selectedClientId)) ? Number(selectedClientId) : null;
         const pid = selectedProjectId != null ? Number(selectedProjectId) : null;
         const pkg = selectedPackageId != null && /^\d+$/.test(String(selectedPackageId)) ? Number(selectedPackageId) : undefined;
         if (!cid || !pid || !entriesToLog.length) return;
-        await fetch('/api/project-drawings', {
+        await fetch('/api/jobs/enqueue', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            clientId: cid,
-            projectId: pid,
-            packageId: pkg,
-            entries: entriesToLog,
-          })
+          body: JSON.stringify({ type: 'publish-job', payload: { clientId: cid, projectId: pid, packageId: pkg, drawings: entriesToLog } }),
         });
       } catch (e) {
-        // Silent failure; UI already attached locally
-        console.warn('ProjectDrawing quick log failed:', e?.message || e);
+        console.warn('enqueue publish-job failed:', e?.message || e);
       }
     })();
   }, [selectedFormat, pendingExtraFiles, drawings, drgNoMap, setDrawings, selectedClientId, selectedProjectId, selectedPackageId]);
