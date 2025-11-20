@@ -8,49 +8,59 @@ import { handleGenerateZip } from "./lib/jobs/generateZipJob.js";
 const POLL_INTERVAL_MS = Number(process.env.JOB_POLL_INTERVAL_MS || 2000);
 
 async function processOneJob() {
-  // find one queued job
+  // find one queued job and attempt to atomically claim it by setting status to 'running'
   const job = await prisma.job.findFirst({
     where: { status: "queued" },
     orderBy: { createdAt: "asc" },
   });
   if (!job) return null;
 
-  console.log("[WORKER] picked job", job.id, job.type);
+  // Try to atomically claim the job: only update if it's still queued
+  const claimed = await prisma.job.updateMany({
+    where: { id: job.id, status: "queued" },
+    data: { status: "running", attempts: { increment: 1 } },
+  });
+  if (!claimed || claimed.count === 0) {
+    // somebody else claimed or it was cancelled, skip
+    return null;
+  }
+
+  // reload the job record after claim
+  const claimedJob = await prisma.job.findUnique({ where: { id: job.id } });
+  if (!claimedJob) return null;
+
+  console.log("[WORKER] picked job", claimedJob.id, claimedJob.type);
   try {
-    await prisma.job.update({
-      where: { id: job.id },
-      data: { status: "running", attempts: { increment: 1 } },
-    });
 
     let result = null;
-    if (job.type === "publish-job") {
-      result = await handlePublishJob(job, prisma);
-    } else if (job.type === "parse-excel") {
-      result = await handleParseExcel(job, prisma);
-    } else if (job.type === "validate-conflicts") {
-      result = await handleValidateConflicts(job, prisma);
-    } else if (job.type === "generate-zip") {
-      result = await handleGenerateZip(job, prisma);
+    if (claimedJob.type === "publish-job") {
+      result = await handlePublishJob(claimedJob, prisma);
+    } else if (claimedJob.type === "parse-excel") {
+      result = await handleParseExcel(claimedJob, prisma);
+    } else if (claimedJob.type === "validate-conflicts") {
+      result = await handleValidateConflicts(claimedJob, prisma);
+    } else if (claimedJob.type === "generate-zip") {
+      result = await handleGenerateZip(claimedJob, prisma);
     } else {
       result = { message: "unknown job type" };
     }
 
     await prisma.job.update({
-      where: { id: job.id },
+      where: { id: claimedJob.id },
       data: { status: "succeeded", result: result, progress: 100 },
     });
-    console.log("[WORKER] job succeeded", job.id, job.type);
-    return job.id;
+    console.log("[WORKER] job succeeded", claimedJob.id, claimedJob.type);
+    return claimedJob.id;
   } catch (err) {
-    console.error("[WORKER] job failed", job.id, err?.message || err);
-    const attempts = (job.attempts || 0) + 1;
-    const maxAttempts = job.maxAttempts || 5;
+    console.error("[WORKER] job failed", claimedJob.id, err?.message || err);
+    const attempts = (claimedJob.attempts || 0) + 1;
+    const maxAttempts = claimedJob.maxAttempts || 5;
     const status = attempts >= maxAttempts ? "failed" : "queued";
     await prisma.job.update({
-      where: { id: job.id },
+      where: { id: claimedJob.id },
       data: { status, error: err?.message || String(err), attempts },
     });
-    return job.id;
+    return claimedJob.id;
   }
 }
 
