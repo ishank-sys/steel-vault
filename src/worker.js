@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-import { prisma } from "@/lib/prisma.js";
-import { handleParseExcel } from "@/lib/jobs/parseExcelJob.js";
-import { handleValidateConflicts } from "@/lib/jobs/validateConflictsJob.js";
-import { handlePublishJob } from "@/lib/jobs/projectDrawingsJob.js";
-import { handleGenerateZip } from "@/lib/jobs/generateZipJob.js";
+import { prisma } from "./lib/prisma.js";
+import { handleParseExcel } from "./lib/jobs/parseExcelJob.js";
+import { handleValidateConflicts } from "./lib/jobs/validateConflictsJob.js";
+import { handlePublishJob } from "./lib/jobs/projectDrawingsJob.js";
+import { handleGenerateZip } from "./lib/jobs/generateZipJob.js";
 
 const POLL_INTERVAL_MS = Number(process.env.JOB_POLL_INTERVAL_MS || 2000);
 

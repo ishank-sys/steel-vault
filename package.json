@@ -7,8 +7,8 @@
     "postinstall": "prisma generate",
     "build": "prisma generate && next build",
     "start": "next start",
-    "start:worker": "node --loader tsconfig-paths/esm-loader -e \"import('./src/worker.js')\"",
-    "dev:worker": "node --watch --loader tsconfig-paths/esm-loader -e \"import('./src/worker.js')\"",
+    "start:worker": "node ./src/worker.js",
+    "dev:worker": "node --watch ./src/worker.js",
     "lint": "next lint",
     "seed": "prisma db seed"
   },
@@ -60,6 +60,7 @@
     "@types/react": "19.1.6",
     "eslint": "^9",
     "eslint-config-next": "15.3.3",
-    "tailwindcss": "^4"
+    "tailwindcss": "^4",
+    "tsconfig-paths": "^4.2.0"
   }
 }
