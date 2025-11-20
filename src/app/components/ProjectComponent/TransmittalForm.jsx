@@ -852,7 +852,7 @@ const handlePublish = async () => {
       const s = await fetch(`/api/jobs/${genJobId}`);
       if (!s.ok) throw new Error('Job status fetch failed');
       const js = await s.json();
-      const job = js.job;
+      const job = js && js.job ? js.job : js;
       if (!job) throw new Error('No job');
       if (job.status === 'succeeded') { jobResult = job.result; break; }
       if (job.status === 'failed') throw new Error(job.error || 'generate-zip failed');

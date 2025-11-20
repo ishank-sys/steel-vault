@@ -259,15 +259,17 @@ const PublishDrawing = () => {
         if (!enq.ok) throw new Error(`Failed to enqueue validate-conflicts (${enq.status})`);
         const { jobId } = await enq.json();
         let jobRes = null;
-        // Poll for up to 60 seconds
+        // Poll for up to 60 seconds. Accept response shaped either `{ job }` or top-level job.
         for (let i = 0; i < 60; i++) {
           if (cancelled) break;
           await new Promise(r => setTimeout(r, 1000));
           const s = await fetch(`/api/jobs/${jobId}`);
           if (!s.ok) continue;
           const j = await s.json();
-          if (j.status === 'succeeded') { jobRes = j; break; }
-          if (j.status === 'failed') throw new Error('validate-conflicts job failed');
+          const job = j && j.job ? j.job : j;
+          if (!job) continue;
+          if (job.status === 'succeeded') { jobRes = job; break; }
+          if (job.status === 'failed') throw new Error('validate-conflicts job failed');
         }
         if (!jobRes || !jobRes.result) throw new Error('validate-conflicts job timed out');
         const prev = jobRes.result.prevRevMap || {};
@@ -782,12 +784,12 @@ const PublishDrawing = () => {
       const resp = await fetch('/api/jobs/enqueue', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'parse-excel', payload }) });
       if (!resp.ok) throw new Error('Failed to enqueue parse job');
       const { jobId } = await resp.json();
-      // Poll job status until succeeded or failed
+      // Poll job status until succeeded or failed. Accept `{ job }` or top-level job.
       const poll = async () => {
         const s = await fetch(`/api/jobs/${jobId}`);
         if (!s.ok) throw new Error('Job status fetch failed');
         const js = await s.json();
-        const job = js.job;
+        const job = js && js.job ? js.job : js;
         if (!job) throw new Error('No job');
         if (job.status === 'succeeded') {
           const rows = job.result?.rows || [];
