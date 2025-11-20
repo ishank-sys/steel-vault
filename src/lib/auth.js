@@ -23,7 +23,8 @@ ensureNextAuthUrl();
 
 export const authOptions = {
   providers: [
-    CredentialsProvider({
+    // Normalize provider import to support both CJS and ESM shapes
+    (CredentialsProvider && CredentialsProvider.default ? CredentialsProvider.default : CredentialsProvider)({
       name: "Credentials",
       credentials: {
         email: { label: "Email", type: "email" },

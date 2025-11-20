@@ -61,9 +61,15 @@ export async function GET(req) {
       `u."id" AS "solTL_id"`,
       `u."name" AS "solTL_name"`,
       `u."userType" AS "solTL_userType"`,
-      `upm."id" AS "clientPM_id"`,
-      `upm."name" AS "clientPM_name"`
     ];
+    // Only include client PM flattened fields if the column exists (and join will be added)
+    if (colSet.has('clientPm')) {
+      selectParts.push(`upm."id" AS "clientPM_id"`);
+      selectParts.push(`upm."name" AS "clientPM_name"`);
+    } else {
+      selectParts.push(`NULL AS "clientPM_id"`);
+      selectParts.push(`NULL AS "clientPM_name"`);
+    }
 
   // Include clientJobNo from Client if column exists
   if (clientColSet.has('clientJobNo')) selectParts.push(`c."clientJobNo" AS "client_job_no"`);
@@ -72,12 +78,15 @@ export async function GET(req) {
     if (colSet.has('ClientprojectNo')) selectParts.push(`p."ClientprojectNo" AS "client_project_no"`);
     else selectParts.push(`NULL AS "client_project_no"`);
 
+    // Only join client PM user if the Project table actually contains the clientPm column
     let query = `
       SELECT ${selectParts.join(', ')}
   FROM "Project" p
   LEFT JOIN "Client" c ON c."id" = p."clientId"
-  LEFT JOIN "User" u ON u."id" = p."solTLId"
-  LEFT JOIN "User" upm ON upm."id" = p."clientPm"`;
+  LEFT JOIN "User" u ON u."id" = p."solTLId"`;
+    if (colSet.has('clientPm')) {
+      query += `\n  LEFT JOIN "User" upm ON upm."id" = p."clientPm"`;
+    }
 
     const params = [];
     const whereClauses = [];
