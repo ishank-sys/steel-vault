@@ -64,4 +64,3 @@ export async function handleGenerateZip(job, prisma) {
   return { storagePath: `gs://${bucket}/${destPath}`, fileName: zipName, record };
 }
 
-export default { handleGenerateZip };

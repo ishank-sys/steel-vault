@@ -153,5 +153,3 @@ export async function handlePublishJob(job, prisma) {
   return await batchUpsertDrawings(entries);
   // analyze total drawings and update revision for a client's project's package's project drawings.
 }
-
-export default { withProjectLock, batchUpsertDrawings, handlePublishJob };
