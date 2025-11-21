@@ -107,7 +107,7 @@ model ProjectDrawing {
   id             BigInt    @id @default(autoincrement())
   projectId      BigInt
   packageId      BigInt?
-  drawingNumber  String
+  drgNo          String
   title          String?
   revision       String?
   issueDate      DateTime? @db.Date
@@ -123,7 +123,6 @@ model ProjectDrawing {
   lastAttachedAt DateTime?
   meta           Json?
   clientRowId    String?
-  drgNo          String?
   serial_no      Int?
   description    String?
   assy_qty       Int?

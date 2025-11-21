@@ -69,7 +69,7 @@
   ```json
   {
     "clientId": ..., "projectId": ..., "packageId": ...,
-    "drawings": [ { "drawingNumber": ..., "category": ..., "revision": ..., "fileNames": [...], "issueDate": ... } ]
+    "drawings": [ { "drgNo": ..., "category": ..., "revision": ..., "fileNames": [...], "issueDate": ... } ]
   }
   ```
 
@@ -123,7 +123,7 @@
 
 ### Publish flow (client-side `TransmittalForm.jsx`)
 
-1. Build `entriesToUpsert` from selected drawings with `drawingNumber`, `category`, `revision`, `fileNames`, `issueDate`.
+1. Build `entriesToUpsert` from selected drawings with `drgNo`, `category`, `revision`, `fileNames`, `issueDate`.
 2. Enqueue `publish-job` by POST `/api/jobs/enqueue` with payload `{ clientId, projectId, packageId, drawings: entriesToUpsert }`. The worker will upsert to the `ProjectDrawing` table.
 3. Upload attached drawing files to GCS (client uploads directly via `uploadToGCSDirect` helper which itself writes a `DocumentLog` entry on success). Client collects `uploadedObjectPaths`.
 4. Enqueue `generate-zip` with `objectPaths: uploadedObjectPaths` and optional `zipName`. The worker will read objects server-side and produce a central ZIP plus a `DocumentLog` record.
@@ -174,7 +174,7 @@ Content-Type: application/json
 
 {
   "type": "publish-job",
-  "payload": { "clientId": 3, "projectId": 42, "packageId": 7, "drawings": [ { "drawingNumber": "A-101", "category": "A", "revision": "A", "fileNames": ["A-101-A.pdf"], "issueDate": "2025-11-20" } ] }
+  "payload": { "clientId": 3, "projectId": 42, "packageId": 7, "drawings": [ { "drgNo": "A-101", "category": "A", "revision": "A", "fileNames": ["A-101-A.pdf"], "issueDate": "2025-11-20" } ] }
 }
 ```
 
