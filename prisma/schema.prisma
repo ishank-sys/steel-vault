@@ -6,6 +6,7 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
 model Client {
   id               Int           @id @default(autoincrement())
   name             String
@@ -101,8 +102,6 @@ model DocumentLog {
   project      Project  @relation(fields: [projectId], references: [id])
 }
 
-// Stores the latest state of a project's drawing by DrgNo and optional category.
-// Intended to be upserted on publish so UI can show current revision and attachment name.
 model ProjectDrawing {
   id             BigInt    @id @default(autoincrement())
   projectId      BigInt
@@ -179,7 +178,6 @@ model ProjectRFI {
   updatedat DateTime @updatedAt @db.Timestamptz(6)
 }
 
-// Background job queue table for DB-poller worker
 model Job {
   id          Int      @id @default(autoincrement())
   type        String   // parse-excel | validate-conflicts | publish-job | generate-zip
