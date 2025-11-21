@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "@/lib/prisma.js";
 import { getGCSStorage } from "@/lib/gcs";
 
 const prisma = new PrismaClient();

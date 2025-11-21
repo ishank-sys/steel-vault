@@ -11,10 +11,49 @@ const DesignDrawing = () => {
   const [me, setMe] = useState(null);
   const [projectId, setProjectId] = useState('');
   const [projects, setProjects] = useState([]);
+  const [uploadJobId, setUploadJobId] = useState(null);
+  const [isPolling, setIsPolling] = useState(false);
   const router = useRouter();
 
   const handleFileChange = (event) => {
     setSelectedFile(event.target.files[0]);
+  };
+
+  const pollJobStatus = async (jobId) => {
+    setIsPolling(true);
+    const pollInterval = setInterval(async () => {
+      try {
+        const response = await fetch(`/api/jobs/${jobId}`);
+        if (response.ok) {
+          const data = await response.json();
+          const job = data.job;
+          
+          if (job.status === 'succeeded') {
+            clearInterval(pollInterval);
+            setIsPolling(false);
+            const result = job.result || {};
+            setUploadStatus(`✅ Upload completed successfully: ${result.fileName || selectedFile.name}`);
+          } else if (job.status === 'failed') {
+            clearInterval(pollInterval);
+            setIsPolling(false);
+            setUploadStatus(`❌ Upload failed: ${job.error || 'Unknown error'}`);
+          } else {
+            setUploadStatus(`🔄 Processing upload... Status: ${job.status} (${job.progress || 0}%)`);
+          }
+        }
+      } catch (error) {
+        console.error('Error polling job status:', error);
+      }
+    }, 2000);
+
+    // Stop polling after 5 minutes
+    setTimeout(() => {
+      clearInterval(pollInterval);
+      if (isPolling) {
+        setIsPolling(false);
+        setUploadStatus('⏱️ Upload taking longer than expected. Check back later.');
+      }
+    }, 300000);
   };
 
   const handleUpload = async () => {
@@ -34,6 +73,7 @@ const DesignDrawing = () => {
     try {
       const headers = {};
       if (me && me.email) headers['x-user-email'] = me.email;
+      setUploadStatus('🚀 Enqueueing upload job...');
 
       const response = await fetch('/api/upload-design-drawing', {
         method: 'POST',
@@ -43,13 +83,19 @@ const DesignDrawing = () => {
 
       if (response.ok) {
         const data = await response.json();
-        setUploadStatus(`File uploaded successfully: ${data.record?.storagePath || ''}`);
+        if (data.jobId) {
+          setUploadJobId(data.jobId);
+          setUploadStatus(`📋 Upload job created (ID: ${data.jobId}). Processing...`);
+          pollJobStatus(data.jobId);
+        } else {
+          setUploadStatus(`✅ ${data.message || 'Upload completed'}`);
+        }
       } else {
         const errorData = await response.json();
-        setUploadStatus(`Upload failed: ${errorData.error}`);
+        setUploadStatus(`❌ Upload failed: ${errorData.error}`);
       }
     } catch (error) {
-      setUploadStatus(`An error occurred: ${error.message}`);
+      setUploadStatus(`❌ An error occurred: ${error.message}`);
     }
   };
 

@@ -1,8 +1,8 @@
 import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma.js';
 export const runtime = 'nodejs';
 
 // Primary client uses the deployed DATABASE_URL (likely pooled :6543)
-const prisma = new PrismaClient();
 
 export async function GET() {
   const start = Date.now();

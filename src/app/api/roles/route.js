@@ -1,8 +1,6 @@
 // app/api/roles/route.js
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import { prisma } from "@/lib/prisma.js";
 
 // ✅ GET all roles
 export async function GET() {

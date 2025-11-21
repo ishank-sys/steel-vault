@@ -6,6 +6,9 @@ export async function uploadToGCSDirect(
   const debug = process.env.NEXT_PUBLIC_DEBUG_UPLOAD === '1';
   if (debug) console.log('[upload] start', { name: file.name, size: file.size, type: file.type, clientId, projectId });
 
+  // Note: This function still uses direct upload for backward compatibility
+  // For new uploads, consider using uploadToGCSBackgroundJob instead
+
   let signRes: Response;
   try {
     signRes = await fetch("/api/gcs/sign", {
@@ -120,4 +123,89 @@ export async function uploadToGCSDirect(
   if (debug) console.log('[upload] complete', { objectPath, size: file.size, record });
 
   return { objectPath, size: file.size, record };
+}
+
+export async function uploadToGCSBackgroundJob(
+  file: File,
+  opts?: { 
+    clientId?: number; 
+    projectId?: number; 
+    packageId?: number | string; 
+    packageName?: string; 
+    subFolder?: string;
+    fileType?: string;
+    logType?: string;
+    onJobCreated?: (jobId: number) => void;
+  }
+) {
+  const { 
+    clientId, 
+    projectId, 
+    packageId, 
+    packageName, 
+    subFolder,
+    fileType,
+    logType = "EMPLOYEE_UPLOAD",
+    onJobCreated 
+  } = opts || {};
+  
+  const debug = process.env.NEXT_PUBLIC_DEBUG_UPLOAD === '1';
+  if (debug) console.log('[upload-job] start', { 
+    name: file.name, 
+    size: file.size, 
+    type: file.type, 
+    clientId, 
+    projectId,
+    subFolder,
+    fileType 
+  });
+
+  try {
+    // Enqueue upload job via multipart form data
+    const formData = new FormData();
+    formData.append("file", file);
+    if (clientId !== undefined) formData.append("clientId", clientId.toString());
+    if (projectId !== undefined) formData.append("projectId", projectId.toString());
+    if (packageId !== undefined) formData.append("packageId", packageId.toString());
+    if (packageName) formData.append("packageName", packageName);
+    if (subFolder) formData.append("subFolder", subFolder);
+    if (fileType) formData.append("fileType", fileType);
+    formData.append("logType", logType);
+
+    const response = await fetch("/api/upload", {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to enqueue upload job: ${errorText}`);
+    }
+
+    const result = await response.json();
+    if (debug) console.log('[upload-job] enqueued', result);
+
+    if (onJobCreated && result.jobId) {
+      onJobCreated(result.jobId);
+    }
+
+    return {
+      jobId: result.jobId,
+      status: result.status,
+      fileName: result.fileName || file.name,
+      message: result.message,
+    };
+  } catch (error: any) {
+    if (debug) console.error('[upload-job] error', error);
+    throw new Error(`Upload job failed: ${error?.message || error}`);
+  }
+}
+
+// Helper function to poll job status
+export async function pollJobStatus(jobId: number): Promise<any> {
+  const response = await fetch(`/api/jobs/${jobId}`);
+  if (!response.ok) {
+    throw new Error(`Failed to get job status: ${response.statusText}`);
+  }
+  return await response.json();
 }

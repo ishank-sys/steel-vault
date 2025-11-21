@@ -4,6 +4,7 @@ import { handleParseExcel } from "./lib/jobs/parseExcelJob.js";
 import { handleValidateConflicts } from "./lib/jobs/validateConflictsJob.js";
 import { handlePublishJob } from "./lib/jobs/projectDrawingsJob.js";
 import { handleGenerateZip } from "./lib/jobs/generateZipJob.js";
+import { handleUploadJob } from "./lib/jobs/uploadJob.js";
 
 const POLL_INTERVAL_MS = Number(process.env.JOB_POLL_INTERVAL_MS || 2000);
 
@@ -41,6 +42,8 @@ async function processOneJob() {
       result = await handleValidateConflicts(claimedJob, prisma);
     } else if (claimedJob.type === "generate-zip") {
       result = await handleGenerateZip(claimedJob, prisma);
+    } else if (claimedJob.type === "upload-file") {
+      result = await handleUploadJob(claimedJob, prisma);
     } else {
       result = { message: "unknown job type" };
     }

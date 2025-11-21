@@ -5,7 +5,7 @@ import * as XLSX from "xlsx";
 import ExcelJS from "exceljs";
 import JSZip from "jszip";
 import { saveAs } from "file-saver";
-import { uploadToGCSDirect } from "@/lib/uploadToGCS";
+import { uploadToGCSBackgroundJob } from "@/lib/uploadToGCS";
 import useDrawingStore from "../../../../src/stores/useDrawingStore";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -46,6 +46,9 @@ const TransmittalForm = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadPhase, setUploadPhase] = useState(null); // null | 'processing' | 'uploading'
   const [completeLogEnabled, setCompleteLogEnabled] = useState(false);
+  const [uploadJobs, setUploadJobs] = useState([]); // Track multiple upload jobs
+  const [currentFileIndex, setCurrentFileIndex] = useState(0);
+  const [totalFiles, setTotalFiles] = useState(0);
   // Email fields
   const [toEmails, setToEmails] = useState("");
   const [emailSubject, setEmailSubject] = useState("");
@@ -1082,23 +1085,70 @@ const TransmittalForm = () => {
         }
       });
 
-      // Upload files sequentially (to limit parallel uploads) and collect storage paths
-      for (const entry of allFilesToUpload) {
+      // Enqueue background upload jobs sequentially and collect resulting storage paths
+      setTotalFiles(allFilesToUpload.length);
+      const jobs = [];
+      
+      for (let i = 0; i < allFilesToUpload.length; i++) {
+        const entry = allFilesToUpload[i];
         try {
-          const uploadRes = await uploadToGCSDirect(entry.file, {
+          setCurrentFileIndex(i + 1);
+          setUploadProgress(Math.round(((i + 0.0) / Math.max(1, allFilesToUpload.length)) * 100));
+          
+          // enqueue job
+          const jobRes = await uploadToGCSBackgroundJob(entry.file, {
             clientId: Number(clientId),
             projectId: Number(projectIdToSend),
             packageId: pkgIdResolved || undefined,
+            subFolder: 'design-drawings',
+            fileType: 'Design Drawing',
+            logType: 'CLIENT_UPLOAD',
           });
-          if (uploadRes?.record?.storagePath)
-            uploadedObjectPaths.push(uploadRes.record.storagePath);
+          
+          if (jobRes && jobRes.jobId) {
+            jobs.push({
+              jobId: jobRes.jobId,
+              fileName: entry.file.name,
+              status: 'queued',
+              progress: 0
+            });
+          }
+
+          // If job created, poll for completion
+          if (jobRes && jobRes.jobId) {
+            const jid = jobRes.jobId;
+            let finished = false;
+            for (;;) {
+              const s = await fetch(`/api/jobs/${jid}`);
+              if (!s.ok) throw new Error('Job status fetch failed');
+              const js = await s.json();
+              const job = js && js.job ? js.job : js;
+              if (!job) throw new Error('No job');
+              if (job.status === 'succeeded') {
+                finished = true;
+                const result = job.result || {};
+                // Prefer storagePath in result.record or result.storagePath
+                const sp = result?.record?.storagePath || result?.storagePath || result?.objectPath || null;
+                if (sp) uploadedObjectPaths.push(sp);
+                break;
+              }
+              if (job.status === 'failed') {
+                throw new Error(job.error || 'upload job failed');
+              }
+              // wait before polling again
+              await new Promise((r) => setTimeout(r, 1200));
+            }
+            if (!finished) {
+              console.warn('Upload job did not finish but loop ended for', entry.file.name);
+            }
+          }
         } catch (e) {
           console.warn(
-            "Failed to upload attachment for drawing",
+            'Failed to enqueue/upload attachment for drawing',
             entry.drawing?.drgNo,
             e?.message || e
           );
-          // Continue uploading others; worker will skip missing ones
+          // Continue with others
         }
       }
 
@@ -1488,31 +1538,68 @@ const TransmittalForm = () => {
         </button>
       </div>
 
-      {/* Upload Progress UI for Publish */}
-      {isPublishing &&
-        (uploadPhase === "processing" ? (
-          <div className="mt-2">
-            <div className="w-full bg-gray-200 rounded h-3 overflow-hidden">
-              <div className="h-3 w-full bg-gradient-to-r from-gray-300 via-gray-400 to-gray-300 animate-pulse"></div>
-            </div>
-            <div className="text-xs text-gray-700 mt-1">
-              Processing… preparing files and saving records
-            </div>
+      {/* Enhanced Progress UI for Publish */}
+      {isPublishing && (
+        <div className="mt-4 p-4 bg-gray-50 rounded-lg border">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-gray-700">
+              {uploadPhase === "processing" ? "📋 Processing..." :
+               uploadPhase === "uploading" ? "📤 Uploading Files" :
+               "🚀 Publishing"}
+            </span>
+            <span className="text-sm text-gray-600">
+              {uploadPhase === "uploading" && totalFiles > 0 ? 
+                `${currentFileIndex}/${totalFiles} files` : 
+                `${uploadProgress}%`}
+            </span>
           </div>
-        ) : (
-          <div className="mt-2">
-            <div className="w-full bg-gray-200 rounded h-3">
+          
+          {uploadPhase === "processing" ? (
+            <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+              <div className="h-2 w-full bg-gradient-to-r from-blue-300 via-blue-500 to-blue-300 animate-pulse"></div>
+            </div>
+          ) : (
+            <div className="w-full bg-gray-200 rounded-full h-2">
               <div
-                className="bg-blue-600 h-3 rounded"
-                style={{
-                  width: `${uploadProgress}%`,
-                  transition: "width 0.2s",
-                }}
+                className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                style={{ width: `${uploadProgress}%` }}
               ></div>
             </div>
-            <div className="text-xs text-gray-700 mt-1">{uploadProgress}%</div>
+          )}
+          
+          {uploadPhase === "uploading" && uploadJobs.length > 0 && (
+            <div className="mt-2 space-y-1">
+              {uploadJobs.slice(-3).map((job) => (
+                <div key={job.jobId} className="flex items-center justify-between text-xs">
+                  <span className="truncate flex-1 mr-2">{job.fileName}</span>
+                  <span className={`px-2 py-1 rounded text-xs ${
+                    job.status === 'succeeded' ? 'bg-green-100 text-green-700' :
+                    job.status === 'running' ? 'bg-blue-100 text-blue-700' :
+                    job.status === 'failed' ? 'bg-red-100 text-red-700' :
+                    'bg-gray-100 text-gray-700'
+                  }`}>
+                    {job.status === 'succeeded' ? '✅' :
+                     job.status === 'running' ? '🔄' :
+                     job.status === 'failed' ? '❌' :
+                     '⏳'}
+                  </span>
+                </div>
+              ))}
+              {uploadJobs.length > 3 && (
+                <div className="text-xs text-gray-500 text-center">
+                  +{uploadJobs.length - 3} more files...
+                </div>
+              )}
+            </div>
+          )}
+          
+          <div className="text-xs text-gray-600 mt-2">
+            {uploadPhase === "processing" ? "Preparing files and saving records..." :
+             uploadPhase === "uploading" ? "Uploading files to cloud storage..." :
+             "Please wait while we process your request..."}
           </div>
-        ))}
+        </div>
+      )}
 
       {/* Publish confirmation modal (printable) */}
       {showPublishModal && (

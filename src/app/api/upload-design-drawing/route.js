@@ -1,23 +1,17 @@
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "@/lib/prisma.js";
 import { getGCSStorage } from "@/lib/gcs";
 import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
 
-const prisma = new PrismaClient();
-const GCS_BUCKET = process.env.GCS_BUCKET;
+
 
 export async function POST(req) {
   try {
     const contentType = req.headers.get("content-type") || "";
 
-    // If multipart/form-data -> handle file upload to GCS
+    // If multipart/form-data -> enqueue upload job
     if (contentType.includes("multipart/form-data")) {
-      const storage = getGCSStorage();
-      if (!GCS_BUCKET) {
-        return NextResponse.json({ error: "GCS_BUCKET not configured" }, { status: 500 });
-      }
-
       const formData = await req.formData();
       const file = formData.get("file");
       const projectId = formData.get("projectId") || "unknown";

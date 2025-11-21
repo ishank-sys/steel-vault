@@ -15,12 +15,59 @@ const slugify = (s) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 80);
-// --- LOGGING ENDPOINT FOR DIRECT GCS UPLOADS (JSON ONLY) ---
+// --- LOGGING ENDPOINT FOR DIRECT GCS UPLOADS (JSON ONLY) OR JOB ENQUEUEING ---
 export async function POST(req) {
   try {
     const contentType = req.headers.get("content-type") || "";
+    
+    // Handle multipart/form-data for background job enqueueing
+    if (contentType.includes("multipart/form-data")) {
+      const formData = await req.formData();
+      const file = formData.get("file");
+      const clientId = formData.get("clientId");
+      const projectId = formData.get("projectId");
+      const packageId = formData.get("packageId");
+      const packageName = formData.get("packageName");
+      const logType = formData.get("logType") || "EMPLOYEE_UPLOAD";
+      const subFolder = formData.get("subFolder");
+      const fileType = formData.get("fileType");
+
+      if (!file || typeof file === "string") {
+        return NextResponse.json({ error: "No file provided" }, { status: 400 });
+      }
+
+      // Convert file to base64 for job payload
+      const arrayBuffer = await file.arrayBuffer();
+      const fileBase64 = Buffer.from(arrayBuffer).toString('base64');
+
+      // Enqueue upload job
+      const job = await prisma.job.create({
+        data: {
+          type: "upload-file",
+          payload: {
+            fileBase64,
+            fileName: file.name,
+            contentType: file.type || "application/octet-stream",
+            clientId,
+            projectId,
+            packageId,
+            packageName,
+            logType,
+            subFolder,
+            fileType,
+          },
+        },
+      });
+
+      return NextResponse.json({ 
+        message: "Upload job enqueued", 
+        jobId: job.id,
+        status: "queued" 
+      });
+    }
+
     if (!contentType.includes("application/json")) {
-      return NextResponse.json({ error: "Only application/json supported. Upload files directly to GCS using signed URL." }, { status: 415 });
+      return NextResponse.json({ error: "Supported content types: application/json (for logging) or multipart/form-data (for uploads)" }, { status: 415 });
     }
 
     // Direct log request (from client after GCS PUT)

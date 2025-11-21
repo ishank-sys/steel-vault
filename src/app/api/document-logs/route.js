@@ -16,7 +16,8 @@ export async function GET(req) {
     }
 
     // Load minimal user info to determine access scope
-    const user = await prisma.user.findUnique({
+    // Use findFirst to avoid Prisma `findUnique` errors when email is not a unique field
+    const user = await prisma.user.findFirst({
       where: { email: session.user.email },
       select: { id: true, userType: true, clientId: true },
     });

@@ -1,6 +1,6 @@
 'use client';
-import React, { useEffect, useMemo, useState } from 'react';
-import { uploadToGCSDirect } from '@/lib/uploadToGCS';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import { uploadToGCSBackgroundJob } from '@/lib/uploadToGCS';
 import { useSession } from 'next-auth/react';
 import useSWR from 'swr';
 
@@ -17,6 +17,9 @@ export default function FileTransferPanel({ logType = undefined }) {
   const [resultMsg, setResultMsg] = useState('');
   const [lastUploaded, setLastUploaded] = useState(null);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [activeJobId, setActiveJobId] = useState(null);
+  const [jobStatus, setJobStatus] = useState(null);
+  const [isPolling, setIsPolling] = useState(false);
   // Email integration
   const [sendEmail, setSendEmail] = useState(false);
   const [toEmails, setToEmails] = useState('');
@@ -50,6 +53,68 @@ export default function FileTransferPanel({ logType = undefined }) {
     return clients.find((c) => String(c.id) === String(selectedClientId)) || null;
   }, [clients, selectedClientId]);
 
+  const pollJobStatus = useCallback(async (jobId) => {
+    if (!jobId || isPolling) return;
+    
+    setIsPolling(true);
+    const startTime = Date.now();
+    const TIMEOUT_MS = 300000; // 5 minutes
+    
+    const poll = async () => {
+      try {
+        const response = await fetch(`/api/jobs/${jobId}`);
+        if (!response.ok) {
+          throw new Error(`Failed to get job status: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        const job = data.job || data;
+        setJobStatus(job.status);
+        
+        if (job.status === 'succeeded') {
+          setIsPolling(false);
+          setLoading(false);
+          const result = job.result || {};
+          setResultMsg(`✅ Upload completed: ${result.fileName || selectedFile?.name}`);
+          setLastUploaded({
+            jobId,
+            fileName: result.fileName,
+            storagePath: result.objectPath || result.storagePath
+          });
+          setUploadProgress(100);
+          return;
+        } else if (job.status === 'failed') {
+          setIsPolling(false);
+          setLoading(false);
+          setResultMsg(`❌ Upload failed: ${job.error || 'Unknown error'}`);
+          setUploadProgress(0);
+          return;
+        } else if (job.status === 'running') {
+          setResultMsg(`🔄 Processing upload... (${job.progress || 0}%)`);
+          setUploadProgress(job.progress || 0);
+        } else {
+          setResultMsg(`⏳ Upload queued... Status: ${job.status}`);
+        }
+        
+        // Continue polling if not finished and not timed out
+        if (Date.now() - startTime < TIMEOUT_MS) {
+          setTimeout(poll, 2000);
+        } else {
+          setIsPolling(false);
+          setLoading(false);
+          setResultMsg('⏱️ Upload taking longer than expected. Check back later.');
+        }
+      } catch (error) {
+        console.error('Error polling job status:', error);
+        setIsPolling(false);
+        setLoading(false);
+        setResultMsg(`❌ Error checking upload status: ${error.message}`);
+      }
+    };
+    
+    poll();
+  }, [isPolling, selectedFile]);
+
   async function handleUpload() {
     if (!selectedFile) return setResultMsg('Select a file.');
     if (!selectedClientId) return setResultMsg('Select a client.');
@@ -66,16 +131,28 @@ export default function FileTransferPanel({ logType = undefined }) {
     setEmailStatus(null);
 
     try {
-      const { record } = await uploadToGCSDirect(selectedFile, {
+      // Use background job for uploads
+      const result = await uploadToGCSBackgroundJob(selectedFile, {
         clientId: Number(selectedClientId),
         projectId: Number(selectedProjectId),
         packageId: Number(selectedPackageId),
         logType,
-        onProgress: setUploadProgress,
+        onJobCreated: (jobId) => {
+          setActiveJobId(jobId);
+          setResultMsg(`🚀 Upload job created (ID: ${jobId}). Processing...`);
+        },
       });
-      setLoading(false);
-      setResultMsg('Uploaded');
-      setLastUploaded(record || null);
+      
+      if (result.jobId) {
+        setActiveJobId(result.jobId);
+        setResultMsg(`📋 Upload job enqueued. Monitoring progress...`);
+        // Start polling for job status
+        pollJobStatus(result.jobId);
+      } else {
+        setLoading(false);
+        setResultMsg(`✅ ${result.message || 'Upload completed'}`);
+        setLastUploaded({ jobId: result.jobId, fileName: result.fileName });
+      }
 
       // Optional: send email with signed link
       if (sendEmail) {
@@ -216,17 +293,33 @@ export default function FileTransferPanel({ logType = undefined }) {
             {loading ? 'Uploading...' : 'Send Files'}
           </button>
 
-          {/* Upload Progress Bar */}
-          {loading && (
-            <div className="w-full bg-gray-200 rounded h-3 mt-2">
-              <div
-                className="bg-blue-600 h-3 rounded"
-                style={{ width: `${uploadProgress}%`, transition: 'width 0.2s' }}
-              ></div>
+          {/* Enhanced Progress Bar with Job Status */}
+          {(loading || isPolling) && (
+            <div className="mt-2">
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-xs text-gray-600">
+                  {jobStatus === 'running' ? '🔄 Processing' : 
+                   jobStatus === 'queued' ? '⏳ Queued' : 
+                   '📤 Uploading'}
+                </span>
+                <span className="text-xs text-gray-600">{uploadProgress}%</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div
+                  className={`h-2 rounded-full transition-all duration-300 ${
+                    jobStatus === 'running' ? 'bg-blue-500' :
+                    jobStatus === 'queued' ? 'bg-yellow-500' :
+                    'bg-green-500'
+                  }`}
+                  style={{ width: `${uploadProgress}%` }}
+                ></div>
+              </div>
+              {activeJobId && (
+                <div className="text-xs text-gray-500 mt-1">
+                  Job ID: {activeJobId}
+                </div>
+              )}
             </div>
-          )}
-          {loading && (
-            <div className="text-xs text-gray-700 mt-1">{uploadProgress}%</div>
           )}
 
           {resultMsg && <div className="text-sm mt-2">{resultMsg}</div>}

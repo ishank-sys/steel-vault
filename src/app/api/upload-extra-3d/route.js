@@ -1,23 +1,17 @@
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "@/lib/prisma.js";
 import { getGCSStorage } from "@/lib/gcs";
 import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
 
-const prisma = new PrismaClient();
-const GCS_BUCKET = process.env.GCS_BUCKET;
+
 
 export async function POST(req) {
   try {
     const contentType = req.headers.get("content-type") || "";
 
-    // Handle multipart/form-data for file uploads
+    // Handle multipart/form-data for file uploads - enqueue job
     if (contentType.includes("multipart/form-data")) {
-      const storage = getGCSStorage();
-      if (!GCS_BUCKET) {
-        return NextResponse.json({ error: "GCS_BUCKET not configured" }, { status: 500 });
-      }
-
       const formData = await req.formData();
       const file = formData.get("file");
       const projectId = formData.get("projectId") || "unknown";
@@ -57,152 +51,48 @@ export async function POST(req) {
             client = project.client;
             clientId = project.client.id;
           } else {
-            // Create a default admin folder structure
-            client = { id: 1, name: 'Admin-Files' };
-            clientId = 1;
+            return NextResponse.json({ error: "Cannot determine client for admin user" }, { status: 400 });
           }
         } catch (e) {
-          client = { id: 1, name: 'Admin-Files' };
-          clientId = 1;
+          return NextResponse.json({ error: "Failed to resolve client from project" }, { status: 400 });
         }
       } else if (!client) {
         return NextResponse.json({ error: "User not associated with any company" }, { status: 403 });
       }
 
-      // Create folder structure for client and project
-      let clientFolder = `clients/${clientId}`;
-      let clientNameSafe = '';
-      if (client && client.name) {
-        clientNameSafe = String(client.name)
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, '-')
-          .replace(/^-+|-+$/g, '')
-          .slice(0, 80);
-        clientFolder = `clients/${clientId}-${clientNameSafe}`;
-      }
+      // Convert file to base64 for job payload
+      const arrayBuffer = await file.arrayBuffer();
+      const fileBase64 = Buffer.from(arrayBuffer).toString('base64');
 
-      // Get project folder
-      let projectFolder = '';
-      try {
-        const projectRecord = await prisma.project.findUnique({ where: { id: Number(projectId) } });
-        if (projectRecord) {
-          const raw = projectRecord.name || `project-${projectRecord.id}`;
-          const projectNameSafe = String(raw)
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, '-')
-            .replace(/^-+|-+$/g, '')
-            .slice(0, 80);
-          projectFolder = `${projectRecord.id}-${projectNameSafe}`;
-        }
-      } catch (e) {
-        console.warn('Could not resolve project name; using id fallback', e?.message || e);
-        projectFolder = `project-${projectId}`;
-      }
-
-      const originalName = file.name || `upload-${Date.now()}`;
-      const destName = `${Date.now()}_${originalName}`;
-      
       // Create different subfolders for Extra and 3D Model files
       const subFolder = fileType === "3D Model" ? "3d-models" : "extras";
-      const destinationPath = `${clientFolder}/${projectFolder}/${subFolder}/${destName}`;
 
-      const fileSize = file.size || 0;
-      const bucket = storage.bucket(GCS_BUCKET);
-      const gcsFile = bucket.file(destinationPath);
-
-      // Check if file already exists
-      let alreadyExists = false;
-      try {
-        const [exists] = await gcsFile.exists();
-        alreadyExists = exists;
-      } catch (e) {
-        // ignore
-      }
-
-      // Convert Web ReadableStream to Node Readable and upload to GCS
-      const nodeStream = Readable.fromWeb(file.stream());
-      const writeStream = gcsFile.createWriteStream({
-        resumable: false,
-        contentType: file.type || 'application/octet-stream',
+      // Enqueue upload job
+      const job = await prisma.job.create({
+        data: {
+          type: "upload-file",
+          payload: {
+            fileBase64,
+            fileName: file.name || `upload-${Date.now()}`,
+            contentType: file.type || "application/octet-stream",
+            clientId,
+            projectId: Number(projectId),
+            packageId: null,
+            packageName: null,
+            logType: "CLIENT_UPLOAD",
+            subFolder,
+            fileType,
+          },
+        },
       });
 
-      const abortHandler = () => {
-        try { nodeStream.destroy?.(); } catch (e) {}
-        try { writeStream.destroy?.(); } catch (e) {}
-      };
-      req.signal?.addEventListener?.('abort', abortHandler);
-
-      try {
-        await pipeline(nodeStream, writeStream);
-      } finally {
-        req.signal?.removeEventListener?.('abort', abortHandler);
-      }
-
-      // Log to database
-      try {
-        const logType = alreadyExists ? 'NAVIGATE_EXISTING' : 'CLIENT_UPLOAD';
-        
-        // Verify that clientId exists in the Client table before creating DocumentLog
-        const clientExists = await prisma.client.findUnique({
-          where: { id: clientId }
-        });
-        
-        if (!clientExists) {
-          console.warn(`Client with ID ${clientId} not found, skipping document log`);
-          return NextResponse.json({
-            message: 'File uploaded successfully, but logging skipped due to missing client',
-            fileUrl: destinationPath,
-          });
-        }
-        
-        const created = await prisma.documentLog.create({
-          data: {
-            fileName: originalName,
-            clientId: clientId,
-            projectId: Number(projectId),
-            storagePath: destinationPath,
-            size: fileSize,
-            logType: `${fileType.toUpperCase()}_${logType}`,
-          },
-        });
-
-        // Notify central API for ProjectDrawing changes rather than touching
-        // the DB directly. This centralizes compatibility handling and
-        // prevents direct Prisma upserts from running in different codepaths.
-        try {
-          const origin = req.headers.get('origin') || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
-          const drawingBaseRaw = String(originalName).replace(/\.[^/.]+$/, '').trim() || originalName;
-          const drawingBase = (String(drawingBaseRaw).split('-')[0] || drawingBaseRaw).trim();
-          const inferredCategory = fileType === '3D Model' ? 'MODEL' : 'EXTRA';
-          await fetch(`${origin}/api/project-drawings`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              clientId,
-              projectId: Number(projectId),
-              packageId: undefined,
-              entries: [{
-                drgNo: drawingBase,
-                category: inferredCategory,
-                revision: null,
-                fileNames: [originalName],
-                issueDate: new Date().toISOString().slice(0,10),
-              }]
-            })
-          });
-        } catch (fallbackErr) {
-          console.warn('[upload-extra-3d] call to /api/project-drawings failed:', fallbackErr?.message || fallbackErr);
-        }
-
-        return NextResponse.json({
-          message: alreadyExists ? 'File replaced' : 'Uploaded successfully',
-          record: created,
-          fileUrl: destinationPath,
-        });
-      } catch (logErr) {
-        console.error('Failed to log document upload:', logErr.message || logErr);
-        return NextResponse.json({ error: 'Upload succeeded but logging failed' }, { status: 207 });
-      }
+      return NextResponse.json({
+        message: `${fileType} upload job enqueued`,
+        jobId: job.id,
+        status: "queued",
+        fileName: file.name,
+        fileType,
+      });
     }
 
     return NextResponse.json({ error: "Invalid content type. Expected multipart/form-data" }, { status: 400 });

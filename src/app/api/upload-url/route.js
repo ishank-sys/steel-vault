@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 export const runtime = "nodejs";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "@/lib/prisma.js";
 import { getGCSStorage } from "@/lib/gcs";
 
-const prisma = new PrismaClient();
+const GCS_BUCKET = process.env.GCS_BUCKET;
 const GCS_BUCKET = process.env.GCS_BUCKET;
 
 const slugify = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,80);
