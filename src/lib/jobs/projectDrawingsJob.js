@@ -115,7 +115,7 @@ export async function batchUpsertDrawings(entries = []) {
 
         // Fetch any existing active row and lock it.
         const existing = await tx.$queryRawUnsafe(
-          `SELECT id, fileName, meta FROM "ProjectDrawing" WHERE ${whereSql} FOR UPDATE`,
+          `SELECT id, "fileName", meta FROM "ProjectDrawing" WHERE ${whereSql} FOR UPDATE`,
           ...params
         );
         const prevRow =
