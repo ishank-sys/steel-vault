@@ -945,7 +945,7 @@ const PublishDrawing = () => {
           const cat = normalizeCategory(row?.category || '');
           const rev = row?.rev || null;
           entriesToLog.push({
-            drawingNumber: dNo,
+            drgNo: dNo,
             category: cat,
             revision: rev,
             fileNames: [file.name],
@@ -1823,7 +1823,7 @@ const PublishDrawing = () => {
                     </tr>
                   )}
                   {Array.isArray(prevRows) && prevRows.map((row, idx) => {
-                    const dr = row?.drawingNumber ?? row?.drgNo ?? row?.drg_no ?? '-';
+                    const dr = row?.drgNo ?? row?.drg_no ?? '-';
                     const rev = row?.revision ?? row?.rev ?? '-';
                     const cat = row?.category ?? row?.Category ?? '';
                     const upd = row?.updatedAt || row?.updated_at || row?.lastAttachedAt || row?.lastattachedat || null;

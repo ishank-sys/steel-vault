@@ -217,7 +217,7 @@ export async function POST(req) {
                 clientId,
                 projectId: Number(projectId),
                 entries: [{
-                  drawingNumber: String(originalName).replace(/\.[^/.]+$/, '').trim() || originalName,
+                  drgNo: String(originalName).replace(/\.[^/.]+$/, '').trim() || originalName,
                   category: fileType === '3D Model' ? 'MODEL' : 'EXTRA',
                   revision: null,
                   fileNames: [originalName],

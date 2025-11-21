@@ -31,10 +31,10 @@ async function getColumnsMap(table = 'ProjectDrawing') {
 async function getDrawingNumberColumn(table = 'ProjectDrawing') {
   try {
     const { lower } = await getColumnsMap(table);
-    if (lower.has('drawingnumber')) return { quoted: '"drawingNumber"' };
+    if (lower.has('drawingnumber')) return { quoted: '"drgNo"' };
     if (lower.has('drgno')) return { quoted: '"drgNo"' };
   } catch {}
-  return { quoted: '"drawingNumber"' };
+  return { quoted: '"drgNo"' };
 }
 
 async function getCategoryColumn(table = 'ProjectDrawing') {
@@ -58,7 +58,7 @@ async function ensureTable(forceTable) {
       "clientId" INTEGER NOT NULL REFERENCES "Client"(id) ON DELETE CASCADE,
       "projectId" BIGINT NOT NULL REFERENCES "Project"(id) ON DELETE CASCADE,
       "packageId" BIGINT,
-      "drawingNumber" TEXT NOT NULL,
+      "drgNo" TEXT NOT NULL,
       title TEXT,
       item TEXT,
       category TEXT NOT NULL DEFAULT '',
@@ -71,8 +71,6 @@ async function ensureTable(forceTable) {
       "lastAttachedAt" TIMESTAMPTZ,
       "clientRowId" TEXT,
       meta JSONB,
-      -- Versioning columns (kept optional for compatibility)
-      version INTEGER DEFAULT 1,
       superseded_by BIGINT,
       lineage_key TEXT,
       "createdAt" TIMESTAMPTZ DEFAULT NOW(),
@@ -99,11 +97,9 @@ async function ensureTable(forceTable) {
   await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMPTZ DEFAULT NOW();`);
   // Compatibility with Prisma model (drgNo)
   await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "drgNo" TEXT;`);
-  // Versioning support columns (if missing)
-  await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1;`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS superseded_by BIGINT;`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS lineage_key TEXT;`);
-  try { await prisma.$executeRawUnsafe(`UPDATE "${table}" SET "drgNo" = "drawingNumber" WHERE "drgNo" IS NULL AND "drawingNumber" IS NOT NULL;`); } catch {}
+  try { await prisma.$executeRawUnsafe(`UPDATE "${table}" SET "drgNo" = "drgNo" WHERE "drgNo" IS NULL AND "drgNo" IS NOT NULL;`); } catch {}
   // Drop NOT NULL on optional columns to avoid 23502 if legacy schema marked them NOT NULL
   try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ALTER COLUMN "packageId" DROP NOT NULL;`); } catch {}
   try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ALTER COLUMN title DROP NOT NULL;`); } catch {}
@@ -158,12 +154,12 @@ async function ensureTable(forceTable) {
     // Drop legacy unique indexes that block history
     try { await prisma.$executeRawUnsafe(`DROP INDEX IF EXISTS "${table}_unique_conflict";`); } catch {}
     try { await prisma.$executeRawUnsafe(`DROP INDEX IF EXISTS "${table}_unique_conflict_drgno";`); } catch {}
-    // Also drop potential constraint names created by earlier schemas (both drgNo and drawingNumber variants)
-    try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" DROP CONSTRAINT IF EXISTS "${table}_projectId_drawingNumber_category_key";`); } catch {}
+    // Also drop potential constraint names created by earlier schemas (both drgNo and drgNo variants)
+    try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" DROP CONSTRAINT IF EXISTS "${table}_projectId_drgNo_category_key";`); } catch {}
     try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" DROP CONSTRAINT IF EXISTS "${table}_projectid_drawingnumber_category_key";`); } catch {}
     try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" DROP CONSTRAINT IF EXISTS "${table}_projectId_drgNo_category_key";`); } catch {}
     try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" DROP CONSTRAINT IF EXISTS "${table}_projectid_drgno_category_key";`); } catch {}
-    // Best-effort dynamic drop for any unique index on (projectId, drawingNumber, category)
+    // Best-effort dynamic drop for any unique index on (projectId, drgNo, category)
     try {
       await prisma.$executeRawUnsafe(`DO $$
       DECLARE
@@ -173,8 +169,8 @@ async function ensureTable(forceTable) {
           SELECT i.indexname AS name
           FROM pg_indexes i
           WHERE i.schemaname = 'public' AND i.tablename = '${table}'
-            AND (i.indexdef ILIKE '%("projectId", "drawingNumber", "category")%'
-              OR i.indexdef ILIKE '%(projectId, drawingNumber, category)%')
+            AND (i.indexdef ILIKE '%("projectId", "drgNo", "category")%'
+              OR i.indexdef ILIKE '%(projectId, drgNo, category)%')
         ) LOOP
           EXECUTE format('DROP INDEX IF EXISTS %I', rec.name);
         END LOOP;
@@ -208,7 +204,7 @@ async function ensureTable(forceTable) {
           FROM pg_constraint c
           JOIN pg_class t ON t.oid = c.conrelid
           WHERE c.contype = 'u' AND t.relname = '${table}'
-            AND pg_get_constraintdef(c.oid) ILIKE '%("projectId", "drawingNumber", "category")%'
+            AND pg_get_constraintdef(c.oid) ILIKE '%("projectId", "drgNo", "category")%'
         ) LOOP
           BEGIN
             EXECUTE format('ALTER TABLE "${table}" DROP CONSTRAINT %I', rec.name);
@@ -280,7 +276,7 @@ export async function GET(req) {
     await ensureTable(table);
     const { lower } = await getColumnsMap(table);
     const drawingActual = lower.get('drawingnumber') || lower.get('drgno');
-    const drawingQuoted = drawingActual ? `"${drawingActual}"` : '"drawingNumber"';
+    const drawingQuoted = drawingActual ? `"${drawingActual}"` : '"drgNo"';
     const projectActual = lower.get('projectid') || lower.get('project_id');
     const packageActual = lower.get('packageid') || lower.get('package_id');
     const hasSupersede = lower.has('superseded_by');
@@ -293,7 +289,7 @@ export async function GET(req) {
     if (hasSupersede && !(all === '1' || all === 'true' || all === 'yes')) {
       whereParts.push(`superseded_by IS NULL`);
     }
-    // Optional drawing equality filter on either drawingNumber or drgNo
+    // Optional drawing equality filter on either drgNo or drgNo
     if (drawingFilter) {
       const drawingActual = lower.get('drawingnumber') || lower.get('drgno');
       if (drawingActual) {
@@ -347,7 +343,7 @@ export async function POST(req) {
     const nowIso = new Date().toISOString();
     const today = new Date().toISOString().slice(0, 10);
     const { lower } = await getColumnsMap(table);
-    const drawingActual = lower.get('drawingnumber') || lower.get('drgno') || 'drawingNumber';
+    const drawingActual = lower.get('drawingnumber') || lower.get('drgno') || 'drgNo';
     const drawingQuoted = `"${drawingActual}"`;
     const { quoted: catQuoted } = await getCategoryColumn(table);
     const clientActual = lower.get('clientid') || lower.get('client_id');
@@ -361,7 +357,7 @@ export async function POST(req) {
 
     // Normalize input entries
     const norm = entries.map((e) => {
-      const drawingKey = String(e?.drawingNumber ?? e?.drawingNo ?? e?.drgNo ?? '').trim();
+      const drawingKey = String(e?.drgNo ?? e?.drawingNo ?? e?.drgNo ?? '').trim();
       if (!drawingKey) return null;
       const category = String(e?.category ?? '').trim();
       const revision = (e?.rev ?? e?.revision ?? null);

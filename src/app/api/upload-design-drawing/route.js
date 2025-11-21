@@ -179,7 +179,7 @@ export async function POST(req) {
                 clientId: client.id,
                 projectId: Number(projectId),
                 entries: [{
-                  drawingNumber: String(file.name || '').replace(/\.[^/.]+$/, '').trim() || (file.name || `upload-${Date.now()}`),
+                  drgNo: String(file.name || '').replace(/\.[^/.]+$/, '').trim() || (file.name || `upload-${Date.now()}`),
                   category: 'A',
                   revision: null,
                   fileNames: [file.name],

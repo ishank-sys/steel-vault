@@ -135,7 +135,6 @@ model ProjectDrawing {
   chk            String?
   sheet_size     String?
   rev_remark     String?
-  version        Int
   superseded_by  BigInt?
   lineage_key    String?
 

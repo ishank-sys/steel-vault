@@ -122,7 +122,7 @@ export async function POST(req) {
           projectId: cleanProjectId,
           packageId: cleanPackageId ?? undefined,
           entries: [{
-            drawingNumber: drawingBase,
+            drgNo: drawingBase,
             category: inferredCategory,
             revision: null,
             fileNames: [originalName],

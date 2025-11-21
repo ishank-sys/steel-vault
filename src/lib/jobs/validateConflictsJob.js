@@ -23,7 +23,7 @@ export async function handleValidateConflicts(job, prisma) {
     }
     const map = {};
     for (const row of rows) {
-      const dr = row.drgNo || row.drawingNumber || "";
+      const dr = row.drgNo || "";
       const cat = row.category || "";
       const { normDr, normCat } = (() => {
         const normalizeToken = (s) =>

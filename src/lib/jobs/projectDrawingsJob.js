@@ -136,7 +136,6 @@ export async function handlePublishJob(job, prisma) {
         projectId: payload.projectId || d.projectId,
         packageId: payload.packageId || d.packageId,
         drgNo:
-          d.drawingNumber ||
           d.drgNo ||
           d.drawingNo ||
           d.drawing ||
