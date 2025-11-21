@@ -3,6 +3,18 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 
+// Safely serialize BigInt values for JSON responses
+function serializeForJson(value) {
+  if (typeof value === 'bigint') return value.toString();
+  if (Array.isArray(value)) return value.map(serializeForJson);
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const k of Object.keys(value)) out[k] = serializeForJson(value[k]);
+    return out;
+  }
+  return value;
+}
+
 function generateProjectNo() {
   const year = new Date().getFullYear();
   const rand = Math.floor(1000 + Math.random() * 9000);
@@ -150,7 +162,7 @@ export async function GET(req) {
       } : null,
     }));
 
-    return NextResponse.json(out);
+    return NextResponse.json(serializeForJson(out));
   } catch (primaryErr) {
     console.warn('GET /api/projects raw fallback failed, retrying with Prisma include...', primaryErr?.message || primaryErr);
     try {
@@ -179,7 +191,7 @@ export async function GET(req) {
           solTL: { select: { id: true, name: true, userType: true } },
         },
       });
-      return NextResponse.json(projects);
+      return NextResponse.json(serializeForJson(projects));
     } catch (error) {
       console.error("❌ Error fetching projects:", error);
       return NextResponse.json({ error: "Failed to fetch projects" }, { status: 500 });
@@ -251,7 +263,7 @@ export async function POST(req) {
       console.warn('Could not update client project counters:', e.message);
     }
 
-    return NextResponse.json(project);
+    return NextResponse.json(serializeForJson(project));
   } catch (err) {
     console.error("❌ Error creating project:", err);
     return NextResponse.json({ error: err.message }, { status: 500 });

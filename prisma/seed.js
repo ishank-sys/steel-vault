@@ -1639,6 +1639,7 @@ async function upsertProject(p) {
     update: {},
     create: {
       projectNo: p.projectNo,
+      solProjectNo: p.projectNo, // using same value as external number; adjust if distinct internal numbering needed
       name: p.name,
       clientId: client.id,
       solTLId: tl ? tl.id : null,
@@ -1675,8 +1676,8 @@ async function ensureProjectPackage(project) {
     if (!cols || cols.length === 0) {
       // Create a minimal ProjectPackage table so seed can populate mock packages
       const createSql = `CREATE TABLE IF NOT EXISTS "public"."ProjectPackage" (
-        id SERIAL PRIMARY KEY,
-        "projectId" INTEGER NOT NULL,
+        id BIGSERIAL PRIMARY KEY,
+        "projectId" BIGINT NOT NULL,
         "name" TEXT,
         "packageNumber" TEXT,
         "tentativeDate" TIMESTAMP WITH TIME ZONE,

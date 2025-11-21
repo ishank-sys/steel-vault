@@ -54,10 +54,10 @@ async function ensureTable(forceTable) {
   const table = forceTable || await getTargetTable();
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "${table}" (
-      id SERIAL PRIMARY KEY,
+      id BIGSERIAL PRIMARY KEY,
       "clientId" INTEGER NOT NULL REFERENCES "Client"(id) ON DELETE CASCADE,
-      "projectId" INTEGER NOT NULL REFERENCES "Project"(id) ON DELETE CASCADE,
-      "packageId" INTEGER,
+      "projectId" BIGINT NOT NULL REFERENCES "Project"(id) ON DELETE CASCADE,
+      "packageId" BIGINT,
       "drawingNumber" TEXT NOT NULL,
       title TEXT,
       item TEXT,
