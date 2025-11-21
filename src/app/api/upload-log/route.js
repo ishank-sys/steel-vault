@@ -1,7 +1,16 @@
 import { NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma.js';
 
-const prisma = new PrismaClient();
+function serializeForJson(value) {
+  if (typeof value === 'bigint') return value.toString();
+  if (Array.isArray(value)) return value.map(serializeForJson);
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const k of Object.keys(value)) out[k] = serializeForJson(value[k]);
+    return out;
+  }
+  return value;
+}
 
 export async function POST(req) {
   try {
@@ -27,7 +36,7 @@ export async function POST(req) {
       },
     });
 
-    return NextResponse.json({ record });
+    return NextResponse.json(serializeForJson({ record }));
   } catch (e) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }

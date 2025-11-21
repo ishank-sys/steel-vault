@@ -105,8 +105,9 @@ model DocumentLog {
 
 model ProjectDrawing {
   id             BigInt    @id @default(autoincrement())
+  clientId       Int
   projectId      BigInt
-  packageId      BigInt?
+  packageId      BigInt
   drgNo          String
   title          String?
   revision       String?
@@ -117,7 +118,6 @@ model ProjectDrawing {
   createdAt      DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt      DateTime  @updatedAt @db.Timestamptz(6)
   category       String
-  clientId       Int?
   item           String?
   fileName       String?
   lastAttachedAt DateTime?
@@ -141,7 +141,7 @@ model ProjectDrawing {
   client         Client?   @relation(fields: [clientId], references: [id])
   project        Project   @relation(fields: [projectId], references: [id])
 
-  @@unique([projectId, drgNo, category])
+  @@unique([projectId, packageId, clientId, drgNo, category])
 }
 
 model ProjectPackage {

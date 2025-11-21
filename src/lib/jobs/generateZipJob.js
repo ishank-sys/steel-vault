@@ -61,6 +61,17 @@ export async function handleGenerateZip(job, prisma) {
     console.warn('[generateZipJob] failed to create DocumentLog', e?.message || e);
   }
 
-  return { storagePath: `gs://${bucket}/${destPath}`, fileName: zipName, record };
+  function serializeForJson(value) {
+    if (typeof value === 'bigint') return value.toString();
+    if (Array.isArray(value)) return value.map(serializeForJson);
+    if (value && typeof value === 'object') {
+      const out = {};
+      for (const k of Object.keys(value)) out[k] = serializeForJson(value[k]);
+      return out;
+    }
+    return value;
+  }
+
+  return { storagePath: `gs://${bucket}/${destPath}`, fileName: zipName, record: serializeForJson(record) };
 }
 

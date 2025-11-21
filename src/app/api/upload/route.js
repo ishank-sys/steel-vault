@@ -195,7 +195,18 @@ export async function POST(req) {
       console.warn("upload table insert skipped:", e?.message || e);
     }
 
-    return NextResponse.json({ message: "Logged", record });
+    function serializeForJson(value) {
+      if (typeof value === 'bigint') return value.toString();
+      if (Array.isArray(value)) return value.map(serializeForJson);
+      if (value && typeof value === 'object') {
+        const out = {};
+        for (const k of Object.keys(value)) out[k] = serializeForJson(value[k]);
+        return out;
+      }
+      return value;
+    }
+
+    return NextResponse.json(serializeForJson({ message: "Logged", record }));
   } catch (err) {
     console.error("❌ API error in /api/upload POST:", err && err.message ? err.message : err);
     return NextResponse.json({ error: (err && err.message) || "Unexpected error" }, { status: 500 });
