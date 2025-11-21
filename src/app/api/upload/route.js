@@ -103,7 +103,8 @@ export async function POST(req) {
     // Prefer the internal /api/project-drawings endpoint (handles schema drift and packageId)
     // If that fails, do a minimal Prisma upsert without packageId
     // Derive a drawing number from the file name (strip extension)
-    const drawingBase = String(originalName).replace(/\.[^\/.]+$/, '').trim() || String(originalName);
+      const drawingBaseRaw = String(originalName).replace(/\.[^\/\.]+$/, '').trim() || String(originalName);
+      const drawingBase = (String(drawingBaseRaw).split('-')[0] || drawingBaseRaw).trim();
     // Infer a loose category from the path if available; default to empty string
     let inferredCategory = '';
     if (/design-drawings\//i.test(normalizedPath)) inferredCategory = 'A';

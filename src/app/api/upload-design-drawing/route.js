@@ -130,7 +130,8 @@ export async function POST(req) {
         });
         // Upsert into ProjectDrawing so filenames are visible in Supabase
         try {
-          const drawingBase = String(file.name || '').replace(/\.[^/.]+$/, '').trim() || (file.name || `upload-${Date.now()}`);
+          const drawingBaseRaw = String(file.name || '').replace(/\.[^/.]+$/, '').trim() || (file.name || `upload-${Date.now()}`);
+          const drawingBase = (String(drawingBaseRaw).split('-')[0] || drawingBaseRaw).trim();
           const inferredCategory = 'A'; // design-drawings -> A (Shop)
           await prisma.projectDrawing.upsert({
             where: {

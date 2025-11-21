@@ -1,10 +1,24 @@
-import { prisma } from '../prisma.js';
+import { prisma } from "../prisma.js";
+
+// Normalize drawing number: remove any suffix after the first hyphen.
+// Example: 'E101-RA' -> 'E101'
+export function normalizeDrgNo(raw) {
+  if (raw === undefined || raw === null) return raw;
+  const s = String(raw).trim();
+  if (!s) return s;
+  const parts = s.split("-");
+  const base = parts[0].trim();
+  return base || s;
+}
 
 // Helper to run a function inside a transaction with a project-level advisory lock
 export async function withProjectLock(projectId, fn) {
   return await prisma.$transaction(async (tx) => {
     try {
-      await tx.$executeRawUnsafe('SELECT pg_advisory_xact_lock($1)', Number(projectId));
+      await tx.$executeRawUnsafe(
+        "SELECT pg_advisory_xact_lock($1)",
+        Number(projectId)
+      );
     } catch (e) {
       // ignore lock acquisition errors here; let DB surface them if any
     }
@@ -14,9 +28,10 @@ export async function withProjectLock(projectId, fn) {
 
 // Batch upsert drawings: entries is array of { clientId, projectId, packageId, drgNo, category, revision, fileNames, issueDate }
 export async function batchUpsertDrawings(entries = []) {
-  if (!Array.isArray(entries) || entries.length === 0) return { created: 0, superseded: 0 };
+  if (!Array.isArray(entries) || entries.length === 0)
+    return { created: 0, superseded: 0 };
   const projectId = entries[0].projectId;
-  if (!projectId) throw new Error('projectId required');
+  if (!projectId) throw new Error("projectId required");
 
   return await withProjectLock(projectId, async (tx) => {
     let created = 0;
@@ -27,42 +42,86 @@ export async function batchUpsertDrawings(entries = []) {
         const whereParts = [];
         const params = [];
         let idx = 1;
-        whereParts.push(`"projectId" = $${idx++}`); params.push(e.projectId);
-        if (e.packageId != null) { whereParts.push(`"packageId" = $${idx++}`); params.push(e.packageId); }
-        whereParts.push(`"drgNo" = $${idx++}`); params.push(e.drgNo);
+        whereParts.push(`"projectId" = $${idx++}`);
+        params.push(e.projectId);
+        if (e.packageId != null) {
+          whereParts.push(`"packageId" = $${idx++}`);
+          params.push(e.packageId);
+        }
+        // use normalized drawing number for matching and insertion
+        const drgNo = normalizeDrgNo(e.drgNo);
+        whereParts.push(`"drgNo" = $${idx++}`);
+        params.push(drgNo);
         whereParts.push(`superseded_by IS NULL`);
-        const whereSql = whereParts.join(' AND ');
+        const whereSql = whereParts.join(" AND ");
 
-        const existing = await tx.$queryRawUnsafe(`SELECT id FROM "ProjectDrawing" WHERE ${whereSql} FOR UPDATE`, ...params);
-        const prevId = Array.isArray(existing) && existing[0] ? Number(existing[0].id) : null;
+        const existing = await tx.$queryRawUnsafe(
+          `SELECT id FROM "ProjectDrawing" WHERE ${whereSql} FOR UPDATE`,
+          ...params
+        );
+        const prevId =
+          Array.isArray(existing) && existing[0]
+            ? Number(existing[0].id)
+            : null;
         if (prevId) {
-          await tx.$executeRawUnsafe(`UPDATE "ProjectDrawing" SET superseded_by = -1, "updatedAt" = NOW() WHERE id = $1`, prevId);
+          await tx.$executeRawUnsafe(
+            `UPDATE "ProjectDrawing" SET superseded_by = -1, "updatedAt" = NOW() WHERE id = $1`,
+            prevId
+          );
         }
 
         const cols = [];
         const vals = [];
         const params2 = [];
-        const push = (v) => { params2.push(v); vals.push(`$${params2.length}`); };
-        cols.push('"clientId"'); push(e.clientId);
-        cols.push('"projectId"'); push(e.projectId);
-        if (e.packageId != null) { cols.push('"packageId"'); push(e.packageId); }
-        cols.push('"drgNo"'); push(e.drgNo);
-        cols.push('category'); push(e.category || '');
-        cols.push('revision'); push(e.revision || null);
-        cols.push('"fileName"'); push((Array.isArray(e.fileNames) && e.fileNames[0]) || null);
-        cols.push('meta'); push(JSON.stringify({ fileNames: e.fileNames || [], issueDate: e.issueDate || null }));
-        cols.push('"lastAttachedAt"'); push(new Date().toISOString(), 'timestamptz');
+        const push = (v) => {
+          params2.push(v);
+          vals.push(`$${params2.length}`);
+        };
+        cols.push('"clientId"');
+        push(e.clientId);
+        cols.push('"projectId"');
+        push(e.projectId);
+        if (e.packageId != null) {
+          cols.push('"packageId"');
+          push(e.packageId);
+        }
+        cols.push('"drgNo"');
+        push(drgNo);
+        cols.push("category");
+        push(e.category || "");
+        cols.push("revision");
+        push(e.revision || null);
+        cols.push('"fileName"');
+        push((Array.isArray(e.fileNames) && e.fileNames[0]) || null);
+        cols.push("meta");
+        push(
+          JSON.stringify({
+            fileNames: e.fileNames || [],
+            issueDate: e.issueDate || null,
+          })
+        );
+        cols.push('"lastAttachedAt"');
+        push(new Date().toISOString(), "timestamptz");
 
-        const insertSql = `INSERT INTO "ProjectDrawing" (${cols.join(', ')}) VALUES (${vals.join(', ')}) RETURNING id;`;
+        const insertSql = `INSERT INTO "ProjectDrawing" (${cols.join(
+          ", "
+        )}) VALUES (${vals.join(", ")}) RETURNING id;`;
         const ins = await tx.$queryRawUnsafe(insertSql, ...params2);
         const newId = Array.isArray(ins) && ins[0] ? Number(ins[0].id) : null;
         if (newId) created++;
         if (newId && prevId) {
-          await tx.$executeRawUnsafe(`UPDATE "ProjectDrawing" SET superseded_by = $1, "updatedAt" = NOW() WHERE id = $2`, newId, prevId);
+          await tx.$executeRawUnsafe(
+            `UPDATE "ProjectDrawing" SET superseded_by = $1, "updatedAt" = NOW() WHERE id = $2`,
+            newId,
+            prevId
+          );
           superseded++;
         }
       } catch (err) {
-        console.warn('[projectDrawingsService] entry upsert failed', err?.message || err);
+        console.warn(
+          "[projectDrawingsService] entry upsert failed",
+          err?.message || err
+        );
       }
     }
     return { created, superseded, total: created };
@@ -71,19 +130,28 @@ export async function batchUpsertDrawings(entries = []) {
 
 export async function handlePublishJob(job, prisma) {
   const payload = job.payload || {};
-  const entries = Array.isArray(payload.drawings) ? payload.drawings.map(d => ({
-    clientId: payload.clientId || d.clientId,
-    projectId: payload.projectId || d.projectId,
-    packageId: payload.packageId || d.packageId,
-    drgNo: d.drawingNumber || d.drgNo || d.drawingNo || d.drawing || d.drgNo || d.drgNo,
-    category: d.category || d.cat || '',
-    revision: d.revision || d.rev || null,
-    fileNames: d.fileNames || [],
-    issueDate: d.issueDate || null,
-  })) : [];
+  const entries = Array.isArray(payload.drawings)
+    ? payload.drawings.map((d) => ({
+        clientId: payload.clientId || d.clientId,
+        projectId: payload.projectId || d.projectId,
+        packageId: payload.packageId || d.packageId,
+        drgNo:
+          d.drawingNumber ||
+          d.drgNo ||
+          d.drawingNo ||
+          d.drawing ||
+          d.drgNo ||
+          d.drgNo,
+        category: d.category || d.cat || "",
+        revision: d.revision || d.rev || null,
+        fileNames: d.fileNames || [],
+        issueDate: d.issueDate || null,
+      }))
+    : [];
   if (!entries.length) return { created: 0, superseded: 0 };
   // batchUpsertDrawings manages its own lock and tx using prisma internally
   return await batchUpsertDrawings(entries);
+  // analyze total drawings and update revision for a client's project's package's project drawings.
 }
 
 export default { withProjectLock, batchUpsertDrawings, handlePublishJob };

@@ -168,7 +168,8 @@ export async function POST(req) {
 
         // Upsert into ProjectDrawing so filenames show in Supabase
         try {
-          const drawingBase = String(originalName).replace(/\.[^/.]+$/, '').trim() || originalName;
+          const drawingBaseRaw = String(originalName).replace(/\.[^/.]+$/, '').trim() || originalName;
+          const drawingBase = (String(drawingBaseRaw).split('-')[0] || drawingBaseRaw).trim();
           const inferredCategory = fileType === '3D Model' ? 'MODEL' : 'EXTRA';
           await prisma.projectDrawing.upsert({
             where: {

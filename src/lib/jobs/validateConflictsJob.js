@@ -22,7 +22,8 @@ export async function handleValidateConflicts(job, prisma) {
         const normalizeToken = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
         const stripFrTrSuffix = (token) => { if (!token) return token; const up = token.toUpperCase(); if (up.endsWith('FR') || up.endsWith('TR')) return up.slice(0, -2); return up; };
         const normalizeCategory = (c) => { const cc = String(c || '').trim().toUpperCase(); if (!cc) return ''; if (cc === 'A' || cc === 'G' || cc === 'W') return cc; if (cc.startsWith('SHOP') || cc === 'S') return 'A'; if (cc.startsWith('ERECTION') || cc === 'E' || cc === 'GA' || cc.includes('GENERAL')) return 'G'; if (cc.includes('PART') || cc.includes('COMPONENT') || cc === 'P') return 'W'; return cc[0] || ''; };
-        const nd = stripFrTrSuffix(normalizeToken(dr)); const nc = normalizeCategory(cat); return { normDr: nd, normCat: nc };
+        // additionally strip any suffix after first hyphen (e.g., 'E101-RA' -> 'E101')
+        const nd = stripFrTrSuffix(normalizeToken(String(dr).split('-')[0] || dr)); const nc = normalizeCategory(cat); return { normDr: nd, normCat: nc };
       })();
       const key = `${normDr}::${normCat}`;
       const revVal = String(row.revision || row.rev || '').trim();
@@ -50,14 +51,16 @@ export async function handleValidateConflicts(job, prisma) {
     return { conflicts: [], rows, prevRevMap: out };
   }
   if (!drawingKeys.length) return { conflicts: [] };
-  const placeholders = drawingKeys.map((_, i) => `$${i+1}`).join(', ');
-  const sql = `SELECT "drgNo", "category", revision, "fileName" FROM "ProjectDrawing" WHERE "projectId" = $${drawingKeys.length + 1} AND superseded_by IS NULL AND "drgNo" IN (${placeholders})`;
-  const params = [...drawingKeys, projectId];
+  // normalize drawingKeys to base numbers before querying
+  const normKeys = drawingKeys.map(k => (String(k || '').split('-')[0] || String(k || '')).trim());
+  const placeholders = normKeys.map((_, i) => `$${i + 1}`).join(', ');
+  const sql = `SELECT "drgNo", "category", revision, "fileName" FROM "ProjectDrawing" WHERE "projectId" = $${normKeys.length + 1} AND superseded_by IS NULL AND "drgNo" IN (${placeholders})`;
+  const params = [...normKeys, projectId];
   let rows = [];
   try { rows = await prisma.$queryRawUnsafe(sql, ...params); } catch (e) { rows = []; }
   const map = {};
   for (const r of rows) { const key = String(r.drgNo || '').trim(); map[key] = { rev: r.revision || null, fileName: r.fileName || null }; }
-  const conflicts = drawingKeys.map(k => ({ drgNo: k, prev: map[k] || null }));
+  const conflicts = drawingKeys.map(k => { const nk = (String(k || '').split('-')[0] || String(k || '')).trim(); return ({ drgNo: k, prev: map[nk] || null }); });
   return { conflicts };
 }
 

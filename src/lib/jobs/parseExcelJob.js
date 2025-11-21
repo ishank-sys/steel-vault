@@ -26,7 +26,7 @@ export async function handleParseExcel(job, prisma) {
   const parsed = rows.map((row, i) => ({
     id: `job-${job.id}-${i}`,
     slno: i + 1,
-    drgNo: row[drgNoIndex] || '-',
+    drgNo: (String(row[drgNoIndex] || '-') || '-').split('-')[0].trim() || '-',
     item: row[itemIndex] || '-',
     rev: row[revIndex] !== undefined && row[revIndex] !== null && row[revIndex] !== '' ? String(row[revIndex]) : '-',
     modeler: row[modelerIndex] || '-',
