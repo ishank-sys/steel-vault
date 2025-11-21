@@ -6,7 +6,7 @@ const prisma = new PrismaClient();
 
 // ✅ Update role
 export async function PUT(req, { params }) {
-  const { id } = params;
+  const { id } = await params;
   const body = await req.json();
 
   const updatedRole = await prisma.role.update({
@@ -26,7 +26,7 @@ export async function PUT(req, { params }) {
 
 // ✅ Delete role
 export async function DELETE(req, { params }) {
-  const { id } = params;
+  const { id } = await params;
   await prisma.role.delete({ where: { id: Number(id) } });
   return NextResponse.json({ message: "Role deleted successfully" });
 }

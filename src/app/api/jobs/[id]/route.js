@@ -3,7 +3,8 @@ import { NextResponse } from 'next/server';
 
 export async function GET(req, { params }) {
   try {
-    const id = Number(params.id);
+    const { id: idRaw } = await params;
+    const id = Number(idRaw);
     const job = await prisma.job.findUnique({ where: { id } });
     if (!job) return NextResponse.json({ error: 'not found' }, { status: 404 });
     return NextResponse.json({ job });
@@ -16,7 +17,8 @@ export async function GET(req, { params }) {
 export async function POST(req, { params }) {
   // POST used for retry by setting status back to queued
   try {
-    const id = Number(params.id);
+    const { id: idRaw } = await params;
+    const id = Number(idRaw);
     const job = await prisma.job.findUnique({ where: { id } });
     if (!job) return NextResponse.json({ error: 'not found' }, { status: 404 });
     await prisma.job.update({ where: { id }, data: { status: 'queued', error: null } });
@@ -29,7 +31,8 @@ export async function POST(req, { params }) {
 
 export async function DELETE(req, { params }) {
   try {
-    const id = Number(params.id);
+    const { id: idRaw } = await params;
+    const id = Number(idRaw);
     const job = await prisma.job.findUnique({ where: { id } });
     if (!job) return NextResponse.json({ error: 'not found' }, { status: 404 });
 

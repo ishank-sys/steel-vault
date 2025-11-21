@@ -8,7 +8,7 @@ const SIGNED_URL_EXP_MIN = Number(process.env.SIGNED_URL_EXP_MIN || 15);
 
 export async function GET(req, { params }) {
   try {
-    const { id } = params;
+    const { id } = await params;
     if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
 
     const doc = await prisma.documentLog.findUnique({ where: { id: Number(id) } });
