@@ -28,62 +28,46 @@ export async function withProjectLock(projectId, fn) {
 
 // Batch upsert drawings: entries is array of { clientId, projectId, packageId, drgNo, category, revision, fileNames, issueDate }
 export async function batchUpsertDrawings(entries = []) {
+  console.log(
+    "[projectDrawingsService] batchUpsertDrawings called with",
+    JSON.stringify(entries, null, 2),
+    "entries"
+  );
+  console.log("=".repeat(80));
   if (!Array.isArray(entries) || entries.length === 0)
     return { created: 0, superseded: 0 };
-  const projectId = entries[0].projectId;
-  if (!projectId) throw new Error("projectId required");
 
-  return await withProjectLock(projectId, async (tx) => {
+  const projectIdFromFirst = entries[0].projectId;
+  if (!projectIdFromFirst) throw new Error("projectId required");
+
+  return await withProjectLock(projectIdFromFirst, async (tx) => {
     let created = 0;
     let superseded = 0;
+
     for (const e of entries) {
-      // minimal upsert: try to mark existing active row as superseded then insert new row
       try {
-        const whereParts = [];
-        const params = [];
-        let idx = 1;
-        // Ensure we have a usable drawing number. Prefer explicit fields, then
-        // fall back to the first filename, then generate a unique token so we
-        // never attempt to insert a NULL into the non-nullable `drgNo` column.
-        const candidateRaw =
-          e.drgNo ??
-          e.drawingNo ??
-          e.drawing ??
-          (Array.isArray(e.fileNames) && e.fileNames[0]) ??
-          e.fileName ??
-          "";
-        let drgNo = normalizeDrgNo(candidateRaw);
-        if (drgNo === undefined || drgNo === null || drgNo === "") {
-          const basename = String(candidateRaw || "")
-            .replace(/\.[^/.]+$/, "")
-            .trim();
-          if (basename) drgNo = normalizeDrgNo(basename) || basename;
-          else
-            drgNo = `__no-drg__${Date.now()}_${Math.floor(
-              Math.random() * 1000
-            )}`;
-        }
-        // Log resolved values to help diagnose why drgNo may be empty/null
-        try {
-          console.debug("[projectDrawingsService] drgNo candidate/raw ->", {
-            candidateRaw,
-            resolvedDrgNo: drgNo,
-            fileNames: e.fileNames,
-            fileName: e.fileName,
-          });
-        } catch (logErr) {
-          // ignore logging errors
+        // Determine primary incoming filename (preferred source for drgNo if not provided)
+        const incomingPrimaryFile =
+          (Array.isArray(e.fileNames) && e.fileNames[0]) || e.fileName || null;
+
+        // Revised drgNo logic:
+        // 1. If entry contains drgNo -> use it (after normalize)
+        // 2. Else parse from primary filename using normalizeDrgNo
+        // 3. If still missing/empty -> skip the entry (no auto-generation)
+        let drgNo = null;
+        if (e.drgNo != null && String(e.drgNo).trim() !== "") {
+          drgNo = normalizeDrgNo(e.drgNo);
+        } else if (incomingPrimaryFile) {
+          drgNo = normalizeDrgNo(incomingPrimaryFile);
         }
 
-        // Ensure required fields exist for this entry. If any are missing,
-        // skip this entry and continue with the next one to avoid aborting
-        // the transaction due to a bad payload row.
+        // Validate required fields strictly: clientId, projectId, packageId, drgNo
         const missing = [];
         if (e.clientId == null) missing.push("clientId");
         if (e.projectId == null) missing.push("projectId");
         if (e.packageId == null) missing.push("packageId");
-        if (drgNo === undefined || drgNo === null || drgNo === "")
-          missing.push("drgNo");
+        if (drgNo == null || String(drgNo).trim() === "") missing.push("drgNo");
+
         if (missing.length) {
           try {
             console.warn(
@@ -94,43 +78,106 @@ export async function batchUpsertDrawings(entries = []) {
                   clientId: e.clientId,
                   projectId: e.projectId,
                   packageId: e.packageId,
-                  candidateRaw,
+                  providedDrgNo: e.drgNo ?? null,
+                  incomingPrimaryFile,
                   resolvedDrgNo: drgNo,
+                  category: e.category,
                 },
               }
             );
           } catch (logErr) {
             // ignore logging errors
           }
-          continue;
+          continue; // skip this entry
         }
+
+        // Normalize category for insert (optional)
+        const categoryVal =
+          e.category != null && String(e.category).trim() !== ""
+            ? String(e.category).trim()
+            : null;
+
+        // Build WHERE clause to locate existing active drawing (same compound unique set)
+        const whereParts = [];
+        const params = [];
+        let idx = 1;
 
         whereParts.push(`"projectId" = $${idx++}`);
         params.push(e.projectId);
-        // packageId is required now, always include it in the matching WHERE
         whereParts.push(`"packageId" = $${idx++}`);
         params.push(e.packageId);
-        // include clientId and category so the SELECT matches the same
-        // compound-unique combination used by Prisma upsert
         whereParts.push(`"clientId" = $${idx++}`);
         params.push(e.clientId);
-        const categoryVal = e.category || "";
-        whereParts.push(`"category" = $${idx++}`);
-        params.push(categoryVal);
-        // use normalized drawing number for matching and insertion
         whereParts.push(`"drgNo" = $${idx++}`);
         params.push(drgNo);
         whereParts.push(`superseded_by IS NULL`);
         const whereSql = whereParts.join(" AND ");
 
+        // Fetch any existing active row and lock it.
         const existing = await tx.$queryRawUnsafe(
-          `SELECT id FROM "ProjectDrawing" WHERE ${whereSql} FOR UPDATE`,
+          `SELECT id, fileName, meta FROM "ProjectDrawing" WHERE ${whereSql} FOR UPDATE`,
           ...params
         );
-        const prevId =
-          Array.isArray(existing) && existing[0]
-            ? Number(existing[0].id)
-            : null;
+        const prevRow =
+          Array.isArray(existing) && existing[0] ? existing[0] : null;
+        const prevId = prevRow ? Number(prevRow.id) : null;
+
+        // Determine whether incoming primary file matches existing active row
+        let prevMetaFileNames = [];
+        try {
+          if (
+            prevRow &&
+            prevRow.meta &&
+            typeof prevRow.meta === "object" &&
+            Array.isArray(prevRow.meta.fileNames)
+          ) {
+            prevMetaFileNames = prevRow.meta.fileNames.map(String);
+          }
+        } catch (parseErr) {
+          prevMetaFileNames = [];
+        }
+
+        if (
+          prevId &&
+          incomingPrimaryFile &&
+          (String(prevRow.fileName) === String(incomingPrimaryFile) ||
+            prevMetaFileNames.includes(String(incomingPrimaryFile)) ||
+            (Array.isArray(e.fileNames) &&
+              e.fileNames.some(
+                (fn) => String(fn) === String(prevRow.fileName)
+              )))
+        ) {
+          // update the existing row in-place
+          try {
+            const updateData = {
+              revision:
+                e.revision && String(e.revision).trim() !== ""
+                  ? String(e.revision).trim()
+                  : null,
+              fileName: incomingPrimaryFile || prevRow.fileName || null,
+              issueDate: e.issueDate ? new Date(String(e.issueDate)) : null,
+              meta: {
+                fileNames: e.fileNames || [],
+                issueDate: e.issueDate || null,
+              },
+              lastAttachedAt: new Date(),
+            };
+            if (categoryVal != null) updateData.category = categoryVal;
+            await tx.projectDrawing.update({
+              where: { id: prevId },
+              data: updateData,
+            });
+            continue; // moved on to next entry
+          } catch (updErr) {
+            console.warn(
+              "[projectDrawingsService] failed to update existing active drawing, falling back to create: ",
+              updErr?.message || updErr
+            );
+            // fall through to supersede/create path
+          }
+        }
+
+        // If previous active row exists, mark temporarily non-active to allow insert
         if (prevId) {
           await tx.$executeRawUnsafe(
             `UPDATE "ProjectDrawing" SET superseded_by = -1, "updatedAt" = NOW() WHERE id = $1`,
@@ -138,115 +185,46 @@ export async function batchUpsertDrawings(entries = []) {
           );
         }
 
-        const cols = [];
-        const vals = [];
-        const params2 = [];
-        // push value with optional cast (e.g., 'jsonb', 'timestamptz', 'date')
-        const push = (v, cast) => {
-          params2.push(v);
-          vals.push(
-            cast ? `$${params2.length}::${cast}` : `$${params2.length}`
-          );
-        };
-        cols.push('"clientId"');
-        push(e.clientId);
-        cols.push('"projectId"');
-        push(e.projectId);
-        // packageId is required, always include in the INSERT
-        cols.push('"packageId"');
-        push(e.packageId);
-        cols.push('"drgNo"');
-        push(drgNo);
-        cols.push("category");
-        push(e.category || "");
-        cols.push("revision");
-        push(e.revision && e.revision.trim() !== "" ? e.revision.trim() : null);
-        cols.push('"fileName"');
-        push((Array.isArray(e.fileNames) && e.fileNames[0]) || null);
-        cols.push("meta");
-        push(
-          JSON.stringify({
+        // Build create data strictly from provided fields and parsed drgNo
+        const createData = {
+          clientId: e.clientId,
+          projectId: e.projectId,
+          packageId: e.packageId,
+          drgNo,
+          revision:
+            e.revision && String(e.revision).trim() !== ""
+              ? String(e.revision).trim()
+              : null,
+          issueDate: e.issueDate ? new Date(String(e.issueDate)) : null,
+          fileName: incomingPrimaryFile || null,
+          meta: {
             fileNames: e.fileNames || [],
             issueDate: e.issueDate || null,
-          }),
-          "jsonb"
-        );
-        cols.push('"lastAttachedAt"');
-        push(new Date().toISOString(), "timestamptz");
+          },
+          lastAttachedAt: new Date(),
+        };
+        if (categoryVal != null) createData.category = categoryVal;
 
-        // Log the final values we will insert to help debugging drgNo issues
+        // Debug log of insertion target
         try {
           console.debug("[projectDrawingsService] inserting drawing ->", {
-            clientId: e.clientId,
-            projectId: e.projectId,
-            packageId: e.packageId,
-            drgNo,
-            category: e.category || "",
-            revision: e.revision || null,
-            fileName:
-              (Array.isArray(e.fileNames) && e.fileNames[0]) ||
-              e.fileName ||
-              null,
-            meta: {
-              fileNames: e.fileNames || [],
-              issueDate: e.issueDate || null,
-            },
+            clientId: createData.clientId,
+            projectId: createData.projectId,
+            packageId: createData.packageId,
+            drgNo: createData.drgNo,
+            category: createData.category ?? null,
+            revision: createData.revision,
+            fileName: createData.fileName,
+            meta: createData.meta,
           });
         } catch (logErr) {
           // ignore logging errors
         }
 
-        // Use Prisma create instead of raw SQL to avoid column mismatch/null
-        // mapping issues and to let Prisma handle types properly.
-        // Use upsert to update existing active drawing instead of attempting
-        // to insert a duplicate which would violate the unique constraint.
-        // Prisma compound-unique field name derived from the @@unique order:
-        // projectId_packageId_clientId_drgNo_category
-        const where = {
-          projectId_packageId_clientId_drgNo_category: {
-            projectId: e.projectId,
-            packageId: e.packageId,
-            clientId: e.clientId,
-            drgNo,
-            category: categoryVal,
-          },
-        };
-
-        const upsertData = {
-          where,
-          update: {
-            revision: e.revision || null,
-            fileName:
-              (Array.isArray(e.fileNames) && e.fileNames[0]) ||
-              e.fileName ||
-              null,
-            meta: {
-              fileNames: e.fileNames || [],
-              issueDate: e.issueDate || null,
-            },
-            lastAttachedAt: new Date(),
-          },
-          create: {
-            clientId: e.clientId,
-            projectId: e.projectId,
-            packageId: e.packageId,
-            drgNo,
-            category: categoryVal,
-            revision: e.revision || null,
-            fileName:
-              (Array.isArray(e.fileNames) && e.fileNames[0]) ||
-              e.fileName ||
-              null,
-            meta: {
-              fileNames: e.fileNames || [],
-              issueDate: e.issueDate || null,
-            },
-            lastAttachedAt: new Date(),
-          },
+        const createdRow = await tx.projectDrawing.create({
+          data: createData,
           select: { id: true },
-        };
-
-        const createdRow = await tx.projectDrawing.upsert(upsertData);
+        });
         const newId =
           createdRow && createdRow.id ? Number(createdRow.id) : null;
         if (newId) created++;
@@ -263,12 +241,10 @@ export async function batchUpsertDrawings(entries = []) {
           "[projectDrawingsService] entry upsert failed",
           err?.message || err
         );
-        // Rethrow to abort the transaction early — if we continue after a SQL
-        // error the transaction will be in an aborted state (25P02) and every
-        // subsequent DB call will fail. Let the caller handle retries.
         throw err;
       }
     }
+
     return { created, superseded, total: created };
   });
 }
@@ -280,10 +256,11 @@ export async function handlePublishJob(job, prisma) {
         clientId: payload.clientId || d.clientId,
         projectId: payload.projectId || d.projectId,
         packageId: payload.packageId || d.packageId,
-        drgNo: d.drgNo || d.drawingNo || d.drawing || d.drgNo || d.drgNo,
+        // allow drgNo to be provided; batchUpsertDrawings will prefer this value
+        drgNo: d.drgNo || d.drawingNo || d.drawing || null,
         category: d.category || d.cat || "",
         revision: d.revision || d.rev || null,
-        fileNames: d.fileNames || [],
+        fileNames: d.fileNames || (d.fileName ? [d.fileName] : []),
         issueDate: d.issueDate || null,
       }))
     : [];

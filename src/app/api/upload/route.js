@@ -139,45 +139,12 @@ export async function POST(req) {
       console.warn('[upload] call to /api/project-drawings failed:', fallbackErr?.message || fallbackErr);
     }
     if (!pdLogged) {
-      try {
-        await prisma.projectDrawing.upsert({
-          where: {
-            projectId_drgNo_category: {
-              projectId: cleanProjectId,
-              drgNo: drawingBase,
-              category: inferredCategory,
-            },
-          },
-          update: {
-            fileName: originalName,
-            lastAttachedAt: new Date(),
-            meta: {
-              fileNames: [originalName],
-              storagePath: normalizedPath,
-              size: normSize,
-              source: 'upload-api',
-              logType: logType || 'EMPLOYEE_UPLOAD',
-            },
-          },
-          create: {
-            clientId: cleanClientId,
-            projectId: cleanProjectId,
-            drgNo: drawingBase,
-            category: inferredCategory,
-            fileName: originalName,
-            lastAttachedAt: new Date(),
-            meta: {
-              fileNames: [originalName],
-              storagePath: normalizedPath,
-              size: normSize,
-              source: 'upload-api',
-              logType: logType || 'EMPLOYEE_UPLOAD',
-            },
-          },
-        });
-      } catch (e) {
-        console.warn('[upload] Prisma ProjectDrawing upsert (minimal) failed:', e?.message || e);
-      }
+      // We previously attempted a direct Prisma upsert as a fallback here.
+      // To keep a single authoritative code path for ProjectDrawing writes
+      // and to avoid schema-drift/upsert races, rely on the internal API
+      // `/api/project-drawings`. If that call failed earlier (pdLogged=false)
+      // it likely already logged an error; surface a warning and proceed.
+      console.warn('[upload] /api/project-drawings did not acknowledge logging; skipping direct DB upsert to maintain single write path');
     }
 
     // Optional: maintain separate upload table if present

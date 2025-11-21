@@ -50,216 +50,214 @@ async function getCategoryColumn(table = 'ProjectDrawing') {
 // Always target ProjectDrawing (no fallback)
 async function getTargetTable() { return 'ProjectDrawing'; }
 
-async function ensureTable(forceTable) {
-  const table = forceTable || await getTargetTable();
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS "${table}" (
-      id BIGSERIAL PRIMARY KEY,
-      "clientId" INTEGER NOT NULL REFERENCES "Client"(id) ON DELETE CASCADE,
-      "projectId" BIGINT NOT NULL REFERENCES "Project"(id) ON DELETE CASCADE,
-      "packageId" BIGINT,
-      "drgNo" TEXT NOT NULL,
-      title TEXT,
-      item TEXT,
-      category TEXT NOT NULL DEFAULT '',
-      revision TEXT,
-      "issueDate" DATE,
-      "fileName" TEXT,
-      "status" TEXT,
-      "filePath" TEXT,
-      metadata JSONB,
-      "lastAttachedAt" TIMESTAMPTZ,
-      "clientRowId" TEXT,
-      meta JSONB,
-      superseded_by BIGINT,
-      lineage_key TEXT,
-      "createdAt" TIMESTAMPTZ DEFAULT NOW(),
-      "updatedAt" TIMESTAMPTZ DEFAULT NOW()
-    );
-  `);
-  // Ensure compatibility columns exist if table was created previously with a different schema
-  await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS title TEXT;`);
-  await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS category TEXT;`);
-  await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "clientId" INTEGER;`);
-  await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "projectId" INTEGER;`);
-  await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS item TEXT;`);
-  await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS revision TEXT;`);
-  await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "packageId" INTEGER;`);
-  await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "issueDate" DATE;`);
-  await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "fileName" TEXT;`);
-  await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "status" TEXT;`);
-  await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "filePath" TEXT;`);
-  await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS metadata JSONB;`);
-  await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "lastAttachedAt" TIMESTAMPTZ;`);
-  await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "clientRowId" TEXT;`);
-  await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS meta JSONB;`);
-  await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMPTZ DEFAULT NOW();`);
-  await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMPTZ DEFAULT NOW();`);
-  // Compatibility with Prisma model (drgNo)
-  await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "drgNo" TEXT;`);
-  await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS superseded_by BIGINT;`);
-  await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS lineage_key TEXT;`);
-  try { await prisma.$executeRawUnsafe(`UPDATE "${table}" SET "drgNo" = "drgNo" WHERE "drgNo" IS NULL AND "drgNo" IS NOT NULL;`); } catch {}
-  // Drop NOT NULL on optional columns to avoid 23502 if legacy schema marked them NOT NULL
-  try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ALTER COLUMN "packageId" DROP NOT NULL;`); } catch {}
-  try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ALTER COLUMN title DROP NOT NULL;`); } catch {}
-  try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ALTER COLUMN item DROP NOT NULL;`); } catch {}
-  try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ALTER COLUMN revision DROP NOT NULL;`); } catch {}
-  try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ALTER COLUMN "fileName" DROP NOT NULL;`); } catch {}
-  try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ALTER COLUMN "status" DROP NOT NULL;`); } catch {}
-  try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ALTER COLUMN "filePath" DROP NOT NULL;`); } catch {}
-  try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ALTER COLUMN metadata DROP NOT NULL;`); } catch {}
-  try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ALTER COLUMN meta DROP NOT NULL;`); } catch {}
-  try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ALTER COLUMN "lastAttachedAt" DROP NOT NULL;`); } catch {}
-  try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ALTER COLUMN "clientRowId" DROP NOT NULL;`); } catch {}
-  // Set sane defaults for required-like fields if they exist
-  try { await prisma.$executeRawUnsafe(`UPDATE "${table}" SET "status" = 'IN_PROGRESS' WHERE "status" IS NULL;`); } catch {}
-  try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ALTER COLUMN "status" SET DEFAULT 'IN_PROGRESS';`); } catch {}
-  try { await prisma.$executeRawUnsafe(`UPDATE "${table}" SET metadata = '{}'::jsonb WHERE metadata IS NULL;`); } catch {}
-  try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ALTER COLUMN metadata SET DEFAULT '{}'::jsonb;`); } catch {}
-  try {
-    await prisma.$executeRawUnsafe(`
-      DO $$ BEGIN
-        IF NOT EXISTS (
-          SELECT 1 FROM information_schema.table_constraints tc
-          WHERE tc.table_name = '${table}' AND tc.constraint_type = 'FOREIGN KEY' AND tc.constraint_name = '${table}_client_fkey'
-        ) THEN
-          ALTER TABLE "${table}" ADD CONSTRAINT "${table}_client_fkey" FOREIGN KEY ("clientId") REFERENCES "Client"(id) ON DELETE CASCADE;
-        END IF;
-      END $$;
-    `);
-  } catch {}
-  try {
-    await prisma.$executeRawUnsafe(`
-      DO $$ BEGIN
-        IF NOT EXISTS (
-          SELECT 1 FROM information_schema.table_constraints tc
-          WHERE tc.table_name = '${table}' AND tc.constraint_type = 'FOREIGN KEY' AND tc.constraint_name = '${table}_project_fkey'
-        ) THEN
-          ALTER TABLE "${table}" ADD CONSTRAINT "${table}_project_fkey" FOREIGN KEY ("projectId") REFERENCES "Project"(id) ON DELETE CASCADE;
-        END IF;
-      END $$;
-    `);
-  } catch {}
-  const { quoted: catQuoted } = await getCategoryColumn(table);
-  await prisma.$executeRawUnsafe(`UPDATE "${table}" SET ${catQuoted} = '' WHERE ${catQuoted} IS NULL;`);
-  await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ALTER COLUMN ${catQuoted} SET DEFAULT '';`);
-  await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ALTER COLUMN ${catQuoted} SET NOT NULL;`);
-  try {
-    const { lower } = await getColumnsMap(table);
-    const projectActual = lower.get('projectid') || lower.get('project_id');
-    const packageActual = lower.get('packageid') || lower.get('package_id');
-    const drawingActual = lower.get('drawingnumber') || lower.get('drgno');
+// async function ensureTable(forceTable) {
+//   const table = forceTable || await getTargetTable();
+//   await prisma.$executeRawUnsafe(`
+//     CREATE TABLE IF NOT EXISTS "${table}" (
+//       id BIGSERIAL PRIMARY KEY,
+//       "clientId" INTEGER NOT NULL REFERENCES "Client"(id) ON DELETE CASCADE,
+//       "projectId" BIGINT NOT NULL REFERENCES "Project"(id) ON DELETE CASCADE,
+//       "packageId" BIGINT,
+//       "drgNo" TEXT NOT NULL,
+//       title TEXT,
+//       item TEXT,
+//       category TEXT NOT NULL DEFAULT '',
+//       revision TEXT,
+//       "issueDate" DATE,
+//       "fileName" TEXT,
+//       "status" TEXT,
+//       "filePath" TEXT,
+//       metadata JSONB,
+//       "lastAttachedAt" TIMESTAMPTZ,
+//       "clientRowId" TEXT,
+//       meta JSONB,
+//       superseded_by BIGINT,
+//       "createdAt" TIMESTAMPTZ DEFAULT NOW(),
+//       "updatedAt" TIMESTAMPTZ DEFAULT NOW()
+//     );
+//   `);
+//   // Ensure compatibility columns exist if table was created previously with a different schema
+//   await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS title TEXT;`);
+//   await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS category TEXT;`);
+//   await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "clientId" INTEGER;`);
+//   await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "projectId" INTEGER;`);
+//   await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS item TEXT;`);
+//   await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS revision TEXT;`);
+//   await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "packageId" INTEGER;`);
+//   await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "issueDate" DATE;`);
+//   await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "fileName" TEXT;`);
+//   await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "status" TEXT;`);
+//   await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "filePath" TEXT;`);
+//   await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS metadata JSONB;`);
+//   await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "lastAttachedAt" TIMESTAMPTZ;`);
+//   await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "clientRowId" TEXT;`);
+//   await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS meta JSONB;`);
+//   await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMPTZ DEFAULT NOW();`);
+//   await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMPTZ DEFAULT NOW();`);
+//   // Compatibility with Prisma model (drgNo)
+//   await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "drgNo" TEXT;`);
+//   await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS superseded_by BIGINT;`);
+//   try { await prisma.$executeRawUnsafe(`UPDATE "${table}" SET "drgNo" = "drgNo" WHERE "drgNo" IS NULL AND "drgNo" IS NOT NULL;`); } catch {}
+//   // Drop NOT NULL on optional columns to avoid 23502 if legacy schema marked them NOT NULL
+//   try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ALTER COLUMN "packageId" DROP NOT NULL;`); } catch {}
+//   try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ALTER COLUMN title DROP NOT NULL;`); } catch {}
+//   try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ALTER COLUMN item DROP NOT NULL;`); } catch {}
+//   try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ALTER COLUMN revision DROP NOT NULL;`); } catch {}
+//   try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ALTER COLUMN "fileName" DROP NOT NULL;`); } catch {}
+//   try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ALTER COLUMN "status" DROP NOT NULL;`); } catch {}
+//   try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ALTER COLUMN "filePath" DROP NOT NULL;`); } catch {}
+//   try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ALTER COLUMN metadata DROP NOT NULL;`); } catch {}
+//   try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ALTER COLUMN meta DROP NOT NULL;`); } catch {}
+//   try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ALTER COLUMN "lastAttachedAt" DROP NOT NULL;`); } catch {}
+//   try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ALTER COLUMN "clientRowId" DROP NOT NULL;`); } catch {}
+//   // Set sane defaults for required-like fields if they exist
+//   try { await prisma.$executeRawUnsafe(`UPDATE "${table}" SET "status" = 'IN_PROGRESS' WHERE "status" IS NULL;`); } catch {}
+//   try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ALTER COLUMN "status" SET DEFAULT 'IN_PROGRESS';`); } catch {}
+//   try { await prisma.$executeRawUnsafe(`UPDATE "${table}" SET metadata = '{}'::jsonb WHERE metadata IS NULL;`); } catch {}
+//   try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ALTER COLUMN metadata SET DEFAULT '{}'::jsonb;`); } catch {}
+//   try {
+//     await prisma.$executeRawUnsafe(`
+//       DO $$ BEGIN
+//         IF NOT EXISTS (
+//           SELECT 1 FROM information_schema.table_constraints tc
+//           WHERE tc.table_name = '${table}' AND tc.constraint_type = 'FOREIGN KEY' AND tc.constraint_name = '${table}_client_fkey'
+//         ) THEN
+//           ALTER TABLE "${table}" ADD CONSTRAINT "${table}_client_fkey" FOREIGN KEY ("clientId") REFERENCES "Client"(id) ON DELETE CASCADE;
+//         END IF;
+//       END $$;
+//     `);
+//   } catch {}
+//   try {
+//     await prisma.$executeRawUnsafe(`
+//       DO $$ BEGIN
+//         IF NOT EXISTS (
+//           SELECT 1 FROM information_schema.table_constraints tc
+//           WHERE tc.table_name = '${table}' AND tc.constraint_type = 'FOREIGN KEY' AND tc.constraint_name = '${table}_project_fkey'
+//         ) THEN
+//           ALTER TABLE "${table}" ADD CONSTRAINT "${table}_project_fkey" FOREIGN KEY ("projectId") REFERENCES "Project"(id) ON DELETE CASCADE;
+//         END IF;
+//       END $$;
+//     `);
+//   } catch {}
+//   const { quoted: catQuoted } = await getCategoryColumn(table);
+//   await prisma.$executeRawUnsafe(`UPDATE "${table}" SET ${catQuoted} = '' WHERE ${catQuoted} IS NULL;`);
+//   await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ALTER COLUMN ${catQuoted} SET DEFAULT '';`);
+//   await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ALTER COLUMN ${catQuoted} SET NOT NULL;`);
+//   try {
+//     const { lower } = await getColumnsMap(table);
+//     const projectActual = lower.get('projectid') || lower.get('project_id');
+//     const packageActual = lower.get('packageid') || lower.get('package_id');
+//     const drawingActual = lower.get('drawingnumber') || lower.get('drgno');
 
-    // Drop legacy unique indexes that block history
-    try { await prisma.$executeRawUnsafe(`DROP INDEX IF EXISTS "${table}_unique_conflict";`); } catch {}
-    try { await prisma.$executeRawUnsafe(`DROP INDEX IF EXISTS "${table}_unique_conflict_drgno";`); } catch {}
-    // Also drop potential constraint names created by earlier schemas (both drgNo and drgNo variants)
-    try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" DROP CONSTRAINT IF EXISTS "${table}_projectId_drgNo_category_key";`); } catch {}
-    try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" DROP CONSTRAINT IF EXISTS "${table}_projectid_drawingnumber_category_key";`); } catch {}
-    try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" DROP CONSTRAINT IF EXISTS "${table}_projectId_drgNo_category_key";`); } catch {}
-    try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" DROP CONSTRAINT IF EXISTS "${table}_projectid_drgno_category_key";`); } catch {}
-    // Best-effort dynamic drop for any unique index on (projectId, drgNo, category)
-    try {
-      await prisma.$executeRawUnsafe(`DO $$
-      DECLARE
-        rec RECORD;
-      BEGIN
-        FOR rec IN (
-          SELECT i.indexname AS name
-          FROM pg_indexes i
-          WHERE i.schemaname = 'public' AND i.tablename = '${table}'
-            AND (i.indexdef ILIKE '%("projectId", "drgNo", "category")%'
-              OR i.indexdef ILIKE '%(projectId, drgNo, category)%')
-        ) LOOP
-          EXECUTE format('DROP INDEX IF EXISTS %I', rec.name);
-        END LOOP;
-      END$$;`);
-    } catch {}
-    // Dynamic drop for any unique index on (projectId, drgNo, category)
-    try {
-      await prisma.$executeRawUnsafe(`DO $$
-      DECLARE
-        rec RECORD;
-      BEGIN
-        FOR rec IN (
-          SELECT i.indexname AS name
-          FROM pg_indexes i
-          WHERE i.schemaname = 'public' AND i.tablename = '${table}'
-            AND (i.indexdef ILIKE '%("projectId", "drgNo", "category")%'
-              OR i.indexdef ILIKE '%(projectId, drgNo, category)%')
-        ) LOOP
-          EXECUTE format('DROP INDEX IF EXISTS %I', rec.name);
-        END LOOP;
-      END$$;`);
-    } catch {}
-    // And any unique constraint referencing the same three columns
-    try {
-      await prisma.$executeRawUnsafe(`DO $$
-      DECLARE
-        rec RECORD;
-      BEGIN
-        FOR rec IN (
-          SELECT conname AS name
-          FROM pg_constraint c
-          JOIN pg_class t ON t.oid = c.conrelid
-          WHERE c.contype = 'u' AND t.relname = '${table}'
-            AND pg_get_constraintdef(c.oid) ILIKE '%("projectId", "drgNo", "category")%'
-        ) LOOP
-          BEGIN
-            EXECUTE format('ALTER TABLE "${table}" DROP CONSTRAINT %I', rec.name);
-          EXCEPTION WHEN others THEN NULL;
-          END;
-        END LOOP;
-      END$$;`);
-    } catch {}
-    try {
-      await prisma.$executeRawUnsafe(`DO $$
-      DECLARE
-        rec RECORD;
-      BEGIN
-        FOR rec IN (
-          SELECT conname AS name
-          FROM pg_constraint c
-          JOIN pg_class t ON t.oid = c.conrelid
-          WHERE c.contype = 'u' AND t.relname = '${table}'
-            AND pg_get_constraintdef(c.oid) ILIKE '%("projectId", "drgNo", "category")%'
-        ) LOOP
-          BEGIN
-            EXECUTE format('ALTER TABLE "${table}" DROP CONSTRAINT %I', rec.name);
-          EXCEPTION WHEN others THEN NULL;
-          END;
-        END LOOP;
-      END$$;`);
-    } catch {}
+//     // Drop legacy unique indexes that block history
+//     try { await prisma.$executeRawUnsafe(`DROP INDEX IF EXISTS "${table}_unique_conflict";`); } catch {}
+//     try { await prisma.$executeRawUnsafe(`DROP INDEX IF EXISTS "${table}_unique_conflict_drgno";`); } catch {}
+//     // Also drop potential constraint names created by earlier schemas (both drgNo and drgNo variants)
+//     try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" DROP CONSTRAINT IF EXISTS "${table}_projectId_drgNo_category_key";`); } catch {}
+//     try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" DROP CONSTRAINT IF EXISTS "${table}_projectid_drawingnumber_category_key";`); } catch {}
+//     try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" DROP CONSTRAINT IF EXISTS "${table}_projectId_drgNo_category_key";`); } catch {}
+//     try { await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" DROP CONSTRAINT IF EXISTS "${table}_projectid_drgno_category_key";`); } catch {}
+//     // Best-effort dynamic drop for any unique index on (projectId, drgNo, category)
+//     try {
+//       await prisma.$executeRawUnsafe(`DO $$
+//       DECLARE
+//         rec RECORD;
+//       BEGIN
+//         FOR rec IN (
+//           SELECT i.indexname AS name
+//           FROM pg_indexes i
+//           WHERE i.schemaname = 'public' AND i.tablename = '${table}'
+//             AND (i.indexdef ILIKE '%("projectId", "drgNo", "category")%'
+//               OR i.indexdef ILIKE '%(projectId, drgNo, category)%')
+//         ) LOOP
+//           EXECUTE format('DROP INDEX IF EXISTS %I', rec.name);
+//         END LOOP;
+//       END$$;`);
+//     } catch {}
+//     // Dynamic drop for any unique index on (projectId, drgNo, category)
+//     try {
+//       await prisma.$executeRawUnsafe(`DO $$
+//       DECLARE
+//         rec RECORD;
+//       BEGIN
+//         FOR rec IN (
+//           SELECT i.indexname AS name
+//           FROM pg_indexes i
+//           WHERE i.schemaname = 'public' AND i.tablename = '${table}'
+//             AND (i.indexdef ILIKE '%("projectId", "drgNo", "category")%'
+//               OR i.indexdef ILIKE '%(projectId, drgNo, category)%')
+//         ) LOOP
+//           EXECUTE format('DROP INDEX IF EXISTS %I', rec.name);
+//         END LOOP;
+//       END$$;`);
+//     } catch {}
+//     // And any unique constraint referencing the same three columns
+//     try {
+//       await prisma.$executeRawUnsafe(`DO $$
+//       DECLARE
+//         rec RECORD;
+//       BEGIN
+//         FOR rec IN (
+//           SELECT conname AS name
+//           FROM pg_constraint c
+//           JOIN pg_class t ON t.oid = c.conrelid
+//           WHERE c.contype = 'u' AND t.relname = '${table}'
+//             AND pg_get_constraintdef(c.oid) ILIKE '%("projectId", "drgNo", "category")%'
+//         ) LOOP
+//           BEGIN
+//             EXECUTE format('ALTER TABLE "${table}" DROP CONSTRAINT %I', rec.name);
+//           EXCEPTION WHEN others THEN NULL;
+//           END;
+//         END LOOP;
+//       END$$;`);
+//     } catch {}
+//     try {
+//       await prisma.$executeRawUnsafe(`DO $$
+//       DECLARE
+//         rec RECORD;
+//       BEGIN
+//         FOR rec IN (
+//           SELECT conname AS name
+//           FROM pg_constraint c
+//           JOIN pg_class t ON t.oid = c.conrelid
+//           WHERE c.contype = 'u' AND t.relname = '${table}'
+//             AND pg_get_constraintdef(c.oid) ILIKE '%("projectId", "drgNo", "category")%'
+//         ) LOOP
+//           BEGIN
+//             EXECUTE format('ALTER TABLE "${table}" DROP CONSTRAINT %I', rec.name);
+//           EXCEPTION WHEN others THEN NULL;
+//           END;
+//         END LOOP;
+//       END$$;`);
+//     } catch {}
 
-    // Create partial unique index to allow history but enforce a single ACTIVE (non-superseded) row per key
-    if (projectActual && drawingActual) {
-      const projectQuoted = `"${projectActual}"`;
-      const drawingQuoted = `"${drawingActual}"`;
-      if (packageActual) {
-        await prisma.$executeRawUnsafe(`
-          CREATE UNIQUE INDEX IF NOT EXISTS "${table}_active_unique_key"
-          ON "${table}" (${projectQuoted}, "${packageActual}", ${drawingQuoted})
-          WHERE superseded_by IS NULL;
-        `);
-      } else {
-        await prisma.$executeRawUnsafe(`
-          CREATE UNIQUE INDEX IF NOT EXISTS "${table}_active_unique_key_no_pkg"
-          ON "${table}" (${projectQuoted}, ${drawingQuoted})
-          WHERE superseded_by IS NULL;
-        `);
-      }
-      // Helpful supporting indexes
-      try { await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "${table}_project_idx" ON "${table}" (${projectQuoted});`); } catch {}
-      if (packageActual) {
-        try { await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "${table}_package_idx" ON "${table}" ("${packageActual}");`); } catch {}
-      }
-    }
-  } catch (e) {
-    console.warn('[project-drawings] index ensure skipped:', e?.message || e);
-  }
-}
+//     // Create partial unique index to allow history but enforce a single ACTIVE (non-superseded) row per key
+//     if (projectActual && drawingActual) {
+//       const projectQuoted = `"${projectActual}"`;
+//       const drawingQuoted = `"${drawingActual}"`;
+//       if (packageActual) {
+//         await prisma.$executeRawUnsafe(`
+//           CREATE UNIQUE INDEX IF NOT EXISTS "${table}_active_unique_key"
+//           ON "${table}" (${projectQuoted}, "${packageActual}", ${drawingQuoted})
+//           WHERE superseded_by IS NULL;
+//         `);
+//       } else {
+//         await prisma.$executeRawUnsafe(`
+//           CREATE UNIQUE INDEX IF NOT EXISTS "${table}_active_unique_key_no_pkg"
+//           ON "${table}" (${projectQuoted}, ${drawingQuoted})
+//           WHERE superseded_by IS NULL;
+//         `);
+//       }
+//       // Helpful supporting indexes
+//       try { await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "${table}_project_idx" ON "${table}" (${projectQuoted});`); } catch {}
+//       if (packageActual) {
+//         try { await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "${table}_package_idx" ON "${table}" ("${packageActual}");`); } catch {}
+//       }
+//     }
+//   } catch (e) {
+//     console.warn('[project-drawings] index ensure skipped:', e?.message || e);
+//   }
+// }
 
 export async function GET(req) {
   try {
@@ -273,7 +271,7 @@ export async function GET(req) {
       return NextResponse.json({ error: 'projectId is required' }, { status: 400 });
     }
     const table = await getTargetTable();
-    await ensureTable(table);
+    // await ensureTable(table);
     const { lower } = await getColumnsMap(table);
     const drawingActual = lower.get('drawingnumber') || lower.get('drgno');
     const drawingQuoted = drawingActual ? `"${drawingActual}"` : '"drgNo"';
@@ -338,7 +336,7 @@ export async function POST(req) {
     }
 
     const table = await getTargetTable();
-    await ensureTable(table);
+    // await ensureTable(table);
 
     const nowIso = new Date().toISOString();
     const today = new Date().toISOString().slice(0, 10);

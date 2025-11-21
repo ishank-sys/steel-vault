@@ -117,7 +117,7 @@ model ProjectDrawing {
   metadata       Json?
   createdAt      DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt      DateTime  @updatedAt @db.Timestamptz(6)
-  category       String
+  category       String?
   item           String?
   fileName       String?
   lastAttachedAt DateTime?
@@ -136,12 +136,11 @@ model ProjectDrawing {
   sheet_size     String?
   rev_remark     String?
   superseded_by  BigInt?
-  lineage_key    String?
 
   client         Client?   @relation(fields: [clientId], references: [id])
   project        Project   @relation(fields: [projectId], references: [id])
 
-  @@unique([projectId, packageId, clientId, drgNo, category])
+  @@unique([projectId, packageId, clientId, drgNo])
 }
 
 model ProjectPackage {
