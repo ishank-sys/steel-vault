@@ -401,6 +401,46 @@ export async function POST(req) {
         const existingRows = await tx.$queryRawUnsafe(`SELECT id FROM "${table}" ${whereSql} FOR UPDATE`, ...args);
         const prevId = Array.isArray(existingRows) && existingRows[0] ? Number(existingRows[0].id) : null;
 
+        // Compute next revision if not provided by caller.
+        // Use a single COUNT query for performance: nextRevision = count(existing non-null revisions) + 1 -> A,B,C... (supports AA after Z)
+        let finalRevision = r.revision;
+        if (!finalRevision) {
+          const countParts = [];
+          const countArgs = [];
+          let cidx = 1;
+          if (projectActual) { countParts.push(`"${projectActual}" = $${cidx++}`); countArgs.push(projectId); }
+          if (packageActual) {
+            if (packageId == null) { countParts.push(`"${packageActual}" IS NULL`); }
+            else { countParts.push(`"${packageActual}" = $${cidx++}`); countArgs.push(packageId); }
+          }
+          countParts.push(`${drawingQuoted} = $${cidx++}`); countArgs.push(r.drawingKey);
+          const countWhereSql = countParts.length ? `WHERE ${countParts.join(' AND ')}` : '';
+          const cntRows = await tx.$queryRawUnsafe(
+            `SELECT COUNT(1) AS cnt FROM "${table}" ${countWhereSql} AND revision IS NOT NULL`,
+            ...countArgs
+          );
+          let cnt = 0;
+          if (Array.isArray(cntRows) && cntRows[0]) {
+            const first = cntRows[0];
+            cnt = Number(first.cnt ?? first.count ?? Object.values(first)[0] ?? 0);
+          }
+          const nextNum = cnt + 1;
+          const numToRev = (n) => {
+            let out = '';
+            let v = n;
+            while (v > 0) {
+              v -= 1;
+              const rem = v % 26;
+              out = String.fromCharCode(65 + rem) + out;
+              v = Math.floor(v / 26);
+            }
+            return out;
+          };
+          finalRevision = numToRev(nextNum);
+          // update metadata for the inserted row
+          if (r.metadataVal && typeof r.metadataVal === 'object') r.metadataVal.revision = finalRevision;
+        }
+
         // 2) If previous exists, mark it temporarily as non-active to satisfy partial unique index
         if (prevId && hasSupersede) {
           // Mark previous active row as VOID (formerly 'SUSPENDED') when superseded
@@ -419,15 +459,24 @@ export async function POST(req) {
         cols.push(drawingQuoted); push(r.drawingKey);
         cols.push(catQuoted); push(r.category);
         if (titleActual) cols.push(`"${titleActual}"`), push(r.titleVal);
-        cols.push('revision'); push(r.revision);
+        cols.push('revision'); push(finalRevision);
         cols.push('"issueDate"'); push(r.issueDate, 'date');
         cols.push('"fileName"'); push(r.fileNamesStr);
-        if (hasDrgNo) cols.push('"drgNo"'), push(r.drawingKey);
+        // Only include explicit drgNo column if it is a different column name than the chosen drawing column
+        if (hasDrgNo) {
+          const drgLower = 'drgno';
+          if (drawingActual.toLowerCase() !== drgLower) {
+            cols.push('"drgNo"');
+            push(r.drawingKey);
+          }
+        }
         if (statusActual) cols.push(`"${statusActual}"`), push(r.statusVal);
         if (metadataActual) cols.push(`"${metadataActual}"`), push(JSON.stringify(r.metadataVal), 'jsonb');
         cols.push('meta'); push(JSON.stringify({ fileNames: r.fileNamesArr }), 'jsonb');
         cols.push('"lastAttachedAt"'); push(nowIso, 'timestamptz');
         cols.push('"clientRowId"'); push(r.clientRowId);
+        // Ensure updatedAt is provided on insert to satisfy NOT NULL in some schemas
+        cols.push('"updatedAt"'); push(nowIso, 'timestamptz');
 
         const insertSql = `INSERT INTO "${table}" (${cols.join(', ')}) VALUES (${vals.join(', ')}) RETURNING id;`;
         const ins = await tx.$queryRawUnsafe(insertSql, ...params);
