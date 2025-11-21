@@ -6,42 +6,52 @@ const BASE_FOLDER = "/projects/data-warehouse";
 const CLIENTS = [
   {
     name: "S&H",
+    companyName: "S&H",
     email: "s.h@seed.local",
   },
   {
     name: "Amber",
+    companyName: "Amber",
     email: "amber@seed.local",
   },
   {
     name: "Myrex",
+    companyName: "Myrex",
     email: "myrex@seed.local",
   },
   {
     name: "AFS",
+    companyName: "AFS",
     email: "afs@seed.local",
   },
   {
     name: "MMI",
+    companyName: "MMI",
     email: "mmi@seed.local",
   },
   {
     name: "Anderson",
+    companyName: "Anderson",
     email: "anderson@seed.local",
   },
   {
     name: "Sampson",
+    companyName: "Sampson",
     email: "sampson@seed.local",
   },
   {
     name: "KCSS",
+    companyName: "KCSS",
     email: "kcss@seed.local",
   },
   {
     name: "Metal Works",
+    companyName: "Metal Works",
     email: "metal.works@seed.local",
   },
   {
     name: "Able Steel",
+    companyName: "Able Steel",
     email: "able.steel@seed.local",
   },
 ];
@@ -1600,9 +1610,10 @@ const PROJECTS = [
 async function ensureClient(c) {
   return prisma.client.upsert({
     where: { email: c.email },
-    update: { name: c.name },
+    update: { name: c.name, companyName: c.companyName ?? c.name },
     create: {
       name: c.name,
+      companyName: c.companyName ?? c.name,
       email: c.email,
       configuration: {},
       ccListData: [],
