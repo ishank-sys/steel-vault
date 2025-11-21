@@ -32,6 +32,7 @@ model Client {
   projects         Project[]     @relation("ClientProjects")
   users            User[]        @relation("ClientUsers")
   projectDrawings  ProjectDrawing[]
+  uploads          Upload[]
 }
 
 model User {
@@ -103,6 +104,19 @@ model DocumentLog {
   project      Project  @relation(fields: [projectId], references: [id])
 }
 
+// Optional uploads table for misc file upload logging
+model Upload {
+  id          Int      @id @default(autoincrement())
+  clientId    Int
+  projectId   BigInt?
+  filename    String
+  storagePath String
+  size        Int
+  createdAt   DateTime @default(now())
+
+  client Client @relation(fields: [clientId], references: [id])
+}
+
 model ProjectDrawing {
   id             BigInt    @id @default(autoincrement())
   clientId       Int
@@ -112,6 +126,7 @@ model ProjectDrawing {
   title          String?
   revision       String?
   issueDate      DateTime? @db.Date
+  // "VOID", "SUSPENDED", "ISSUED", "APPROVAL", "APPROVED", "IN_PROGRESS"
   status         String?
   filePath       String?
   metadata       Json?

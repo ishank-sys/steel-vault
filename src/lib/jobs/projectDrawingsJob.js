@@ -38,11 +38,36 @@ export async function batchUpsertDrawings(entries = []) {
     return { created: 0, superseded: 0 };
 
   const projectIdFromFirst = entries[0].projectId;
-  if (!projectIdFromFirst) throw new Error("projectId required");
+  if (projectIdFromFirst == null) throw new Error("projectId required");
 
   return await withProjectLock(projectIdFromFirst, async (tx) => {
     let created = 0;
     let superseded = 0;
+
+    // helper: increment revision string A..Z, AA, AB...
+    function nextRevision(cur) {
+      try {
+        const s = String(cur || "")
+          .toUpperCase()
+          .replace(/[^A-Z]/g, "");
+        if (!s) return "A";
+        const chars = s.split("");
+        let i = chars.length - 1;
+        while (i >= 0) {
+          if (chars[i] === "Z") {
+            chars[i] = "A";
+            i -= 1;
+          } else {
+            chars[i] = String.fromCharCode(chars[i].charCodeAt(0) + 1);
+            return chars.join("");
+          }
+        }
+        // all rolled over, prepend A
+        return "A" + chars.join("");
+      } catch (e) {
+        return "A";
+      }
+    }
 
     for (const e of entries) {
       try {
@@ -61,11 +86,10 @@ export async function batchUpsertDrawings(entries = []) {
           drgNo = normalizeDrgNo(incomingPrimaryFile);
         }
 
-        // Validate required fields strictly: clientId, projectId, packageId, drgNo
+        // Validate required fields: clientId, projectId, drgNo. packageId is optional (legacy data may use NULL)
         const missing = [];
         if (e.clientId == null) missing.push("clientId");
         if (e.projectId == null) missing.push("projectId");
-        if (e.packageId == null) missing.push("packageId");
         if (drgNo == null || String(drgNo).trim() === "") missing.push("drgNo");
 
         if (missing.length) {
@@ -104,8 +128,13 @@ export async function batchUpsertDrawings(entries = []) {
 
         whereParts.push(`"projectId" = $${idx++}`);
         params.push(e.projectId);
-        whereParts.push(`"packageId" = $${idx++}`);
-        params.push(e.packageId);
+        // packageId may be NULL in legacy data: match IS NULL when incoming packageId is null
+        if (e.packageId == null) {
+          whereParts.push(`"packageId" IS NULL`);
+        } else {
+          whereParts.push(`"packageId" = $${idx++}`);
+          params.push(e.packageId);
+        }
         whereParts.push(`"clientId" = $${idx++}`);
         params.push(e.clientId);
         whereParts.push(`"drgNo" = $${idx++}`);
@@ -147,15 +176,19 @@ export async function batchUpsertDrawings(entries = []) {
                 (fn) => String(fn) === String(prevRow.fileName)
               )))
         ) {
-          // update the existing row in-place
+          // Same file re-uploaded for existing active drawing -> update in-place
           try {
+            const newRevision =
+              e.revision && String(e.revision).trim() !== ""
+                ? String(e.revision).trim()
+                : nextRevision(prevRow.revision);
+
             const updateData = {
-              revision:
-                e.revision && String(e.revision).trim() !== ""
-                  ? String(e.revision).trim()
-                  : null,
+              revision: newRevision,
               fileName: incomingPrimaryFile || prevRow.fileName || null,
-              issueDate: e.issueDate ? new Date(String(e.issueDate)) : null,
+              issueDate: e.issueDate
+                ? new Date(String(e.issueDate))
+                : prevRow.issueDate || null,
               meta: {
                 fileNames: e.fileNames || [],
                 issueDate: e.issueDate || null,
@@ -163,6 +196,7 @@ export async function batchUpsertDrawings(entries = []) {
               lastAttachedAt: new Date(),
             };
             if (categoryVal != null) updateData.category = categoryVal;
+
             await tx.projectDrawing.update({
               where: { id: prevId },
               data: updateData,
@@ -170,10 +204,10 @@ export async function batchUpsertDrawings(entries = []) {
             continue; // moved on to next entry
           } catch (updErr) {
             console.warn(
-              "[projectDrawingsService] failed to update existing active drawing, falling back to create: ",
+              "[projectDrawingsService] failed to update existing active drawing on re-upload:",
               updErr?.message || updErr
             );
-            // fall through to supersede/create path
+            throw updErr;
           }
         }
 
@@ -197,7 +231,20 @@ export async function batchUpsertDrawings(entries = []) {
               : null,
           issueDate: e.issueDate ? new Date(String(e.issueDate)) : null,
           fileName: incomingPrimaryFile || null,
+          status: "IN_PROGRESS",
           meta: {
+            revision:
+              e.revision && String(e.revision).trim() !== ""
+                ? String(e.revision).trim()
+                : null,
+            fileNames: e.fileNames || [],
+            issueDate: e.issueDate || null,
+          },
+          metadata: {
+            revision:
+              e.revision && String(e.revision).trim() !== ""
+                ? String(e.revision).trim()
+                : null,
             fileNames: e.fileNames || [],
             issueDate: e.issueDate || null,
           },

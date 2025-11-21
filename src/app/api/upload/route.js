@@ -149,16 +149,19 @@ export async function POST(req) {
 
     // Optional: maintain separate upload table if present
     try {
-      await prisma.upload.create({
-        data: {
-          clientId: cleanClientId,
-          filename: originalName,
-          storagePath: storagePath,
-          size: normSize,
-        },
-      });
+      if (prisma && typeof prisma.upload === "object" && typeof prisma.upload.create === "function") {
+        await prisma.upload.create({
+          data: {
+            clientId: cleanClientId,
+            filename: originalName,
+            storagePath: storagePath,
+            size: normSize,
+          },
+        });
+      } else {
+        console.warn("upload table insert skipped: prisma.upload model not available");
+      }
     } catch (e) {
-      // upload table may not exist in schema; ignore
       console.warn("upload table insert skipped:", e?.message || e);
     }
 

@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
 import React, { useState, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import useDrawingStore from '../../../stores/useDrawingStore';
+import useDrawingStore from "../../../stores/useDrawingStore";
 import * as XLSX from "xlsx";
 import JSZip from "jszip";
 import { saveAs } from "file-saver";
@@ -15,7 +15,7 @@ const safeArr = (v) => (Array.isArray(v) ? v : []);
 // Checks multiple common field variants to be resilient to schema drift.
 const matchesClient = (proj, clientId) => {
   if (!proj) return false;
-  const cid = String(clientId ?? '');
+  const cid = String(clientId ?? "");
   if (!cid) return false;
   const cand = [
     proj.clientId,
@@ -35,7 +35,7 @@ const matchesClient = (proj, clientId) => {
 };
 
 // Tiny info popover – same UX as Code #1
-const InfoPopover = ({ title = 'Info', children }) => {
+const InfoPopover = ({ title = "Info", children }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -44,12 +44,14 @@ const InfoPopover = ({ title = 'Info', children }) => {
       if (!ref.current) return;
       if (!ref.current.contains(e.target)) setOpen(false);
     };
-    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
-    document.addEventListener('mousedown', onDocClick);
-    document.addEventListener('keydown', onKey);
+    const onKey = (e) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKey);
     return () => {
-      document.removeEventListener('mousedown', onDocClick);
-      document.removeEventListener('keydown', onKey);
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKey);
     };
   }, []);
 
@@ -91,33 +93,44 @@ const formatOptions = [
 const formatRegexMap = {
   "Project-Drg-Revision": /^[\w\d]+-[\w\d]+-[\w\d]+\.pdf$/i,
   "Drg-Revision": /^[\w\d]+-[\w\d]+\.pdf$/i,
-  "Drg": /^[\w\d]+\.pdf$/i,
+  Drg: /^[\w\d]+\.pdf$/i,
   "Project-Drg(Revision)": /^[\w\d]+-[\w\d]+\([\w\d]+\)\.pdf$/i,
-  "Project_Drg_Revision": /^[\w\d]+_[\w\d]+_[\w\d]+\.pdf$/i,
-  "Drg_Revision": /^[\w\d]+_[\w\d]+\.pdf$/i,
+  Project_Drg_Revision: /^[\w\d]+_[\w\d]+_[\w\d]+\.pdf$/i,
+  Drg_Revision: /^[\w\d]+_[\w\d]+\.pdf$/i,
   "Project_Drg(Revision)": /^[\w\d]+_[\w\d]+\([\w\d]+\)\.pdf$/i,
   "%Drg%#Revision#": /^.+#.+#\.pdf$/i,
 };
 
-const normalizeToken = (s) => String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+const normalizeToken = (s) =>
+  String(s || "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
 const stripFrTrSuffix = (token) => {
   if (!token) return token;
   const up = token.toUpperCase();
-  if (up.endsWith('FR') || up.endsWith('TR')) return up.slice(0, -2);
+  if (up.endsWith("FR") || up.endsWith("TR")) return up.slice(0, -2);
   return up;
 };
 // Normalize category to canonical A/G/W when possible; otherwise empty or first letter uppercased
 const normalizeCategory = (cat) => {
-  const c = String(cat || '').trim().toUpperCase();
-  if (!c) return '';
+  const c = String(cat || "")
+    .trim()
+    .toUpperCase();
+  if (!c) return "";
   // direct A/G/W
-  if (c === 'A' || c === 'G' || c === 'W') return c;
+  if (c === "A" || c === "G" || c === "W") return c;
   // common synonyms
-  if (c.startsWith('SHOP') || c === 'S') return 'A';
-  if (c.startsWith('ERECTION') || c === 'E' || c === 'GA' || c.includes('GENERAL')) return 'G';
-  if (c.includes('PART') || c.includes('COMPONENT') || c === 'P') return 'W';
+  if (c.startsWith("SHOP") || c === "S") return "A";
+  if (
+    c.startsWith("ERECTION") ||
+    c === "E" ||
+    c === "GA" ||
+    c.includes("GENERAL")
+  )
+    return "G";
+  if (c.includes("PART") || c.includes("COMPONENT") || c === "P") return "W";
   // fallback
-  return c[0] || '';
+  return c[0] || "";
 };
 const normalizeDrawingKey = (drgNo, cat) => {
   const normDr = stripFrTrSuffix(normalizeToken(drgNo));
@@ -125,9 +138,9 @@ const normalizeDrawingKey = (drgNo, cat) => {
   return { normDr, normCat, key: `${normDr}::${normCat}` };
 };
 const getLeadingToken = (name) => {
-  const base = String(name || '');
+  const base = String(name || "");
   const start = base.search(/[A-Za-z0-9]/);
-  if (start === -1) return '';
+  if (start === -1) return "";
   let end = start;
   while (end < base.length && /[A-Za-z0-9]/.test(base[end])) end++;
   return base.slice(start, end).trim();
@@ -140,61 +153,26 @@ const extractRevisionFromFileName = (fileName) => {
   // Scan from end to find the last alphabet character
   for (let i = base.length - 1; i >= 0; i--) {
     const ch = base[i];
-    if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z')) return ch.toUpperCase(); // single last alphabet
+    if ((ch >= "A" && ch <= "Z") || (ch >= "a" && ch <= "z"))
+      return ch.toUpperCase(); // single last alphabet
   }
   return null; // no digit found
 };
 
 // Compare Excel rev (cell) to the last alphabet from filename; only this rule affects attach conflict
 const checkRevisionMatch = (drawingRev, fileName) => {
-  const revCellRaw = (drawingRev ?? '').toString().trim();
-  const revCell = revCellRaw === '-' ? '' : revCellRaw;
+  const revCellRaw = (drawingRev ?? "").toString().trim();
+  const revCell = revCellRaw === "-" ? "" : revCellRaw;
   const lastAlpha = extractRevisionFromFileName(fileName);
   // If neither has a revision, it's fine
   if (!revCell && lastAlpha == null) return true;
   // If one is missing, mismatch
   if (!!revCell !== (lastAlpha != null)) return false;
   // Case-insensitive letter compare (Excel rev may be letter)
-  return String(revCell).trim().toUpperCase() === String(lastAlpha).trim().toUpperCase();
-};
-
-
-// Signed URL helper from Code #1 (present here, but **not used** on this page for Extras/3D)
-const uploadFileToS3 = async (file, { projectId = null, clientId = null } = {}) => {
-  const r = await fetch('/api/upload-url', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      filename: file.name,
-      contentType: file.type,
-      clientId,
-      projectId,
-    }),
-  });
-  if (!r.ok) throw new Error('Failed to get upload URL');
-  const { uploadUrl, destinationPath } = await r.json();
-
-  const put = await fetch(uploadUrl, {
-    method: 'PUT',
-    headers: { 'content-type': file.type || 'application/octet-stream' },
-    body: file,
-  });
-  if (!put.ok) throw new Error(`Upload failed: ${put.status}`);
-
-  // Optional logging (kept for parity with Code #1, but not called here)
-  await fetch('/api/upload-log', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      clientId,
-      projectId,
-      originalName: file.name,
-      storagePath: `gs://${process.env.NEXT_PUBLIC_GCS_BUCKET || ''}/${destinationPath}`,
-      size: file.size,
-    }),
-  });
-
-  return { destinationPath };
+  return (
+    String(revCell).trim().toUpperCase() ===
+    String(lastAlpha).trim().toUpperCase()
+  );
 };
 
 /* ================= Component ================= */
@@ -233,63 +211,96 @@ const PublishDrawing = () => {
   const [selectedClientId, setSelectedClientId] = useState(null);
   const [selectedProjectId, setLocalSelectedProjectId] = useState(null);
   const [packages, setPackages] = useState([]);
-  const [selectedPackageId, setSelectedPackageId] = useState('');
+  const [selectedPackageId, setSelectedPackageId] = useState("");
 
   // Previous submissions (per package) UI state
   const [prevOpen, setPrevOpen] = useState(false);
   const [prevLoading, setPrevLoading] = useState(false);
-  const [prevError, setPrevError] = useState('');
+  const [prevError, setPrevError] = useState("");
   const [prevRows, setPrevRows] = useState([]);
   // Map of previous revisions for current package: key `${drawingNo}::${category}` -> revision
   const [prevRevMap, setPrevRevMap] = useState({});
   const [prevRevLoading, setPrevRevLoading] = useState(false);
-  const [prevRevError, setPrevRevError] = useState('');
+  const [prevRevError, setPrevRevError] = useState("");
   const [prevRevHasFetched, setPrevRevHasFetched] = useState(false);
 
   // Fetch previous revisions for selected project/package and build a map
   React.useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      if (!selectedProjectId || !selectedPackageId) { setPrevRevMap({}); setPrevRevError(''); setPrevRevHasFetched(false); return; }
-      setPrevRevLoading(true); setPrevRevError(''); setPrevRevHasFetched(false);
+      if (!selectedProjectId || !selectedPackageId) {
+        setPrevRevMap({});
+        setPrevRevError("");
+        setPrevRevHasFetched(false);
+        return;
+      }
+      setPrevRevLoading(true);
+      setPrevRevError("");
+      setPrevRevHasFetched(false);
       try {
         // Enqueue a validate-conflicts job which returns prevRevMap and rows when fetchAll=true
-        const payload = { projectId: Number(selectedProjectId), packageId: Number(selectedPackageId), fetchAll: true };
-        const enq = await fetch('/api/jobs/enqueue', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'validate-conflicts', payload }) });
-        if (!enq.ok) throw new Error(`Failed to enqueue validate-conflicts (${enq.status})`);
+        const payload = {
+          projectId: Number(selectedProjectId),
+          packageId: Number(selectedPackageId),
+          fetchAll: true,
+        };
+        const enq = await fetch("/api/jobs/enqueue", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type: "validate-conflicts", payload }),
+        });
+        if (!enq.ok)
+          throw new Error(
+            `Failed to enqueue validate-conflicts (${enq.status})`
+          );
         const { jobId } = await enq.json();
         let jobRes = null;
         // Poll for up to 60 seconds. Accept response shaped either `{ job }` or top-level job.
         for (let i = 0; i < 60; i++) {
           if (cancelled) break;
-          await new Promise(r => setTimeout(r, 1000));
+          await new Promise((r) => setTimeout(r, 1000));
           const s = await fetch(`/api/jobs/${jobId}`);
           if (!s.ok) continue;
           const j = await s.json();
           const job = j && j.job ? j.job : j;
           if (!job) continue;
-          if (job.status === 'succeeded') { jobRes = job; break; }
-          if (job.status === 'failed') throw new Error('validate-conflicts job failed');
+          if (job.status === "succeeded") {
+            jobRes = job;
+            break;
+          }
+          if (job.status === "failed")
+            throw new Error("validate-conflicts job failed");
         }
-        if (!jobRes || !jobRes.result) throw new Error('validate-conflicts job timed out');
+        if (!jobRes || !jobRes.result)
+          throw new Error("validate-conflicts job timed out");
         const prev = jobRes.result.prevRevMap || {};
-        const rows = Array.isArray(jobRes.result.rows) ? jobRes.result.rows : [];
+        const rows = Array.isArray(jobRes.result.rows)
+          ? jobRes.result.rows
+          : [];
         if (!cancelled) {
           setPrevRows(rows);
           setPrevRevMap(prev);
         }
       } catch (e) {
-        if (!cancelled) setPrevRevError(e?.message || 'Failed loading previous revisions');
+        if (!cancelled)
+          setPrevRevError(e?.message || "Failed loading previous revisions");
       } finally {
-        if (!cancelled) { setPrevRevLoading(false); setPrevRevHasFetched(true); }
+        if (!cancelled) {
+          setPrevRevLoading(false);
+          setPrevRevHasFetched(true);
+        }
       }
     };
     load();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [selectedProjectId, selectedPackageId, drawings]);
 
-  const [selectedRows, setSelectedRows] = useState(new Set());                 // drawings table
-  const [selectedAttachmentRows, setSelectedAttachmentRows] = useState(new Set()); // attachments (extras + models)
+  const [selectedRows, setSelectedRows] = useState(new Set()); // drawings table
+  const [selectedAttachmentRows, setSelectedAttachmentRows] = useState(
+    new Set()
+  ); // attachments (extras + models)
 
   const [showModal, setShowModal] = useState(false);
   const [modalFiles, setModalFiles] = useState([]);
@@ -309,10 +320,12 @@ const PublishDrawing = () => {
   const modelInputRef = useRef(null);
 
   // Strict step-order guards
-  const canSelectProject = selectedClientId != null && String(selectedClientId) !== '';
+  const canSelectProject =
+    selectedClientId != null && String(selectedClientId) !== "";
   const canSelectPackage = !!selectedProjectId;
   const canUploadExcel = canSelectPackage; // require client + project + package before Excel
-  const canAttachPDF = canSelectPackage && (Array.isArray(drawings) && drawings.length > 0); // require drawings added from Excel
+  const canAttachPDF =
+    canSelectPackage && Array.isArray(drawings) && drawings.length > 0; // require drawings added from Excel
 
   /* ====== DrgNo variants map for matching ====== */
   const drgNoMap = useMemo(() => {
@@ -322,7 +335,7 @@ const PublishDrawing = () => {
       const raw = row?.drgNo;
       if (raw == null) continue;
       const base = String(raw).trim();
-      if (!base || base === '-' || base.toLowerCase() === 'na') continue;
+      if (!base || base === "-" || base.toLowerCase() === "na") continue;
       const variants = [
         normalizeToken(base),
         normalizeToken(base.replace(/[^\w\d]/g, "")),
@@ -338,45 +351,62 @@ const PublishDrawing = () => {
   }, [drawings]);
 
   const inferCategoryFromFilename = useCallback((name) => {
-    const n = String(name || '').toLowerCase();
-    if (/(\bmain\s*part\b|\bpart\b|\bcomponent\b|\bprt\b)/i.test(n)) return 'W'; // Part
-    if (/(\berection\b|\bga\b|general\s*arrangement|\begd\b)/i.test(n)) return 'G'; // Erection
-    return 'A'; // Shop
+    const n = String(name || "").toLowerCase();
+    if (/(\bmain\s*part\b|\bpart\b|\bcomponent\b|\bprt\b)/i.test(n)) return "W"; // Part
+    if (/(\berection\b|\bga\b|general\s*arrangement|\begd\b)/i.test(n))
+      return "G"; // Erection
+    return "A"; // Shop
   }, []);
 
-  const resolveRowForToken = useCallback((token, fileName) => {
-    if (!token) return null;
-    const candidates = drgNoMap[token];
-    if (!candidates || candidates.length === 0) return null;
-    if (candidates.length === 1) return candidates[0];
+  const resolveRowForToken = useCallback(
+    (token, fileName) => {
+      if (!token) return null;
+      const candidates = drgNoMap[token];
+      if (!candidates || candidates.length === 0) return null;
+      if (candidates.length === 1) return candidates[0];
 
-    const preferredCat = inferCategoryFromFilename(fileName);
-    const orderFor = (pref) => (pref === 'W' ? ['W', 'A', 'G'] : pref === 'G' ? ['G', 'A', 'W'] : ['A', 'W', 'G']);
-    const order = orderFor(preferredCat);
-    const catOf = (row) => String(row?.category || '').trim().toUpperCase();
+      const preferredCat = inferCategoryFromFilename(fileName);
+      const orderFor = (pref) =>
+        pref === "W"
+          ? ["W", "A", "G"]
+          : pref === "G"
+          ? ["G", "A", "W"]
+          : ["A", "W", "G"];
+      const order = orderFor(preferredCat);
+      const catOf = (row) =>
+        String(row?.category || "")
+          .trim()
+          .toUpperCase();
 
-    const grouped = candidates.reduce((acc, r) => {
-      const c = catOf(r) || '';
-      (acc[c] ||= []).push(r);
-      return acc;
-    }, {});
+      const grouped = candidates.reduce((acc, r) => {
+        const c = catOf(r) || "";
+        (acc[c] ||= []).push(r);
+        return acc;
+      }, {});
 
-    for (const c of order) {
-      if (grouped[c] && grouped[c].length) {
-        const without = grouped[c].find((r) => !Array.isArray(r.attachedPdfs) || r.attachedPdfs.length === 0);
-        return without || grouped[c][0];
+      for (const c of order) {
+        if (grouped[c] && grouped[c].length) {
+          const without = grouped[c].find(
+            (r) => !Array.isArray(r.attachedPdfs) || r.attachedPdfs.length === 0
+          );
+          return without || grouped[c][0];
+        }
       }
-    }
-    const withoutAny = candidates.find((r) => !Array.isArray(r.attachedPdfs) || r.attachedPdfs.length === 0);
-    return withoutAny || candidates[0];
-  }, [drgNoMap, inferCategoryFromFilename]);
+      const withoutAny = candidates.find(
+        (r) => !Array.isArray(r.attachedPdfs) || r.attachedPdfs.length === 0
+      );
+      return withoutAny || candidates[0];
+    },
+    [drgNoMap, inferCategoryFromFilename]
+  );
 
   const attachmentStats = useMemo(() => {
     const list = Array.isArray(drawings) ? drawings : [];
     const total = list.length;
     let attached = 0;
     for (const d of list) {
-      if (Array.isArray(d.attachedPdfs) && d.attachedPdfs.length > 0) attached++;
+      if (Array.isArray(d.attachedPdfs) && d.attachedPdfs.length > 0)
+        attached++;
     }
     const missing = Math.max(total - attached, 0);
     return { attached, total, missing };
@@ -385,13 +415,17 @@ const PublishDrawing = () => {
   /* ====== Revision sequence validation (client-side only, using Rev column) ====== */
   const revisionConflicts = useMemo(() => {
     // If we're expecting DB previous revisions, wait until they load to avoid false warnings
-    if (selectedProjectId && selectedPackageId && (prevRevLoading || !prevRevHasFetched)) {
+    if (
+      selectedProjectId &&
+      selectedPackageId &&
+      (prevRevLoading || !prevRevHasFetched)
+    ) {
       return new Map();
     }
     // Group rows by normalized DrgNo
     const byDrg = new Map();
     safeArr(drawings).forEach((row) => {
-      const key = normalizeToken(row?.drgNo || '');
+      const key = normalizeToken(row?.drgNo || "");
       if (!key) return;
       if (!byDrg.has(key)) byDrg.set(key, []);
       byDrg.get(key).push(row);
@@ -399,32 +433,38 @@ const PublishDrawing = () => {
 
     const conflicts = new Map(); // rowId -> message
 
-    const isLetter = (r) => /^[A-Za-z]$/.test(String(r || '').trim());
-    const isNumber = (r) => /^\d+$/.test(String(r || '').trim());
+    const isLetter = (r) => /^[A-Za-z]$/.test(String(r || "").trim());
+    const isNumber = (r) => /^\d+$/.test(String(r || "").trim());
 
     for (const [, rows] of byDrg.entries()) {
       // Collect existing revisions in this batch (letters and numbers)
       const letterSet = new Set();
       const numberSet = new Set();
       rows.forEach((r) => {
-        const rev = String(r?.rev ?? '').trim();
-        if (!rev || rev === '-') return;
+        const rev = String(r?.rev ?? "").trim();
+        if (!rev || rev === "-") return;
         if (isLetter(rev)) letterSet.add(rev.toUpperCase());
         else if (isNumber(rev)) numberSet.add(rev);
       });
 
       rows.forEach((r) => {
-        const revRaw = String(r?.rev ?? '').trim();
+        const revRaw = String(r?.rev ?? "").trim();
         const id = r?.id;
         if (!id) return;
-        if (!revRaw || revRaw === '-') return; // no revision -> no conflict
+        if (!revRaw || revRaw === "-") return; // no revision -> no conflict
 
         const dr = r?.drgNo ?? r?.drawingNo;
-        const catRaw = r?.category ?? '';
+        const catRaw = r?.category ?? "";
         const { normDr, normCat } = normalizeDrawingKey(dr, catRaw);
-        const prevDb = prevRevMap?.[`${normDr}::${normCat}`] ?? prevRevMap?.[normDr] ?? '';
+        const prevDb =
+          prevRevMap?.[`${normDr}::${normCat}`] ?? prevRevMap?.[normDr] ?? "";
         // If we rely on DB history, but it's not loaded, skip conflicts.
-        if (selectedProjectId && selectedPackageId && (prevRevLoading || !prevRevHasFetched)) return;
+        if (
+          selectedProjectId &&
+          selectedPackageId &&
+          (prevRevLoading || !prevRevHasFetched)
+        )
+          return;
 
         const revU = revRaw.toUpperCase();
         if (isLetter(revRaw)) {
@@ -432,22 +472,31 @@ const PublishDrawing = () => {
             // DB prev exists and is a letter: require immediate next
             const prevU = String(prevDb).trim().toUpperCase();
             if (revU.charCodeAt(0) !== prevU.charCodeAt(0) + 1) {
-              conflicts.set(id, `Invalid progression from '${prevU}' to '${revU}'`);
+              conflicts.set(
+                id,
+                `Invalid progression from '${prevU}' to '${revU}'`
+              );
             }
             return; // handled via DB
           }
           // No DB prev: validate within-batch minimal continuity
-          if (revU === 'A') return; // first allowed
+          if (revU === "A") return; // first allowed
           const prevLetter = String.fromCharCode(revU.charCodeAt(0) - 1);
           if (!letterSet.has(prevLetter)) {
-            conflicts.set(id, `Missing previous revision ${prevLetter} before ${revU}`);
+            conflicts.set(
+              id,
+              `Missing previous revision ${prevLetter} before ${revU}`
+            );
           }
         } else if (isNumber(revRaw)) {
           if (prevDb && /^\d+$/.test(String(prevDb))) {
             const prevNum = Number(prevDb);
             const curNum = Number(revRaw);
             if (curNum !== prevNum + 1) {
-              conflicts.set(id, `Invalid progression from '${prevDb}' to '${revRaw}'`);
+              conflicts.set(
+                id,
+                `Invalid progression from '${prevDb}' to '${revRaw}'`
+              );
             }
             return; // handled via DB
           }
@@ -455,7 +504,10 @@ const PublishDrawing = () => {
           const curNum = Number(revRaw);
           if (curNum === 1) return;
           if (!numberSet.has(String(curNum - 1))) {
-            conflicts.set(id, `Missing previous revision ${curNum - 1} before ${curNum}`);
+            conflicts.set(
+              id,
+              `Missing previous revision ${curNum - 1} before ${curNum}`
+            );
           }
         } else {
           // Unknown format – flag softly
@@ -466,12 +518,16 @@ const PublishDrawing = () => {
 
     // Also compare against previous revision from DB for selected package (normalized DrgNo + category)
     const isValidStep = (prev, next) => {
-      const p = (prev ?? '').toString().trim();
-      const n = (next ?? '').toString().trim();
+      const p = (prev ?? "").toString().trim();
+      const n = (next ?? "").toString().trim();
       if (!p && !n) return true; // nothing provided
-      if (!p && n) return n.toUpperCase() === 'A' || (isNumber(n) && Number(n) === 1);
+      if (!p && n)
+        return n.toUpperCase() === "A" || (isNumber(n) && Number(n) === 1);
       if (!n) return true; // don't flag empty new rev as conflict here
-      if (isLetter(p) && isLetter(n)) return n.toUpperCase().charCodeAt(0) === p.toUpperCase().charCodeAt(0) + 1;
+      if (isLetter(p) && isLetter(n))
+        return (
+          n.toUpperCase().charCodeAt(0) === p.toUpperCase().charCodeAt(0) + 1
+        );
       if (isNumber(p) && isNumber(n)) return Number(n) === Number(p) + 1;
       return true;
     };
@@ -479,52 +535,76 @@ const PublishDrawing = () => {
       if (!row?.id) return;
       const dr = row?.drgNo ?? row?.drawingNo;
       if (!dr) return;
-      const catKeyRaw = row?.category ?? '';
+      const catKeyRaw = row?.category ?? "";
       const { normDr, normCat } = normalizeDrawingKey(dr, catKeyRaw);
-      const prev = prevRevMap?.[`${normDr}::${normCat}`] ?? prevRevMap?.[normDr] ?? '';
-      const next = row?.rev ?? '';
+      const prev =
+        prevRevMap?.[`${normDr}::${normCat}`] ?? prevRevMap?.[normDr] ?? "";
+      const next = row?.rev ?? "";
       if (!conflicts.has(row.id) && !isValidStep(prev, next)) {
-        conflicts.set(row.id, `Invalid progression from '${prev || '-'}' to '${next || '-'}'`);
+        conflicts.set(
+          row.id,
+          `Invalid progression from '${prev || "-"}' to '${next || "-"}'`
+        );
       }
     });
 
     return conflicts; // Map of id -> message
-  }, [drawings, prevRevMap, prevRevLoading, prevRevHasFetched, selectedProjectId, selectedPackageId]);
+  }, [
+    drawings,
+    prevRevMap,
+    prevRevLoading,
+    prevRevHasFetched,
+    selectedProjectId,
+    selectedPackageId,
+  ]);
 
   /* ====== Project pickers (same as Code #1) ====== */
-  const handleProjectChange = useCallback((e) => {
-    const selectedRaw = e.target.value;
-    // Resolve selected project by matching against both projectNo and id (string/number tolerant)
-    const selectedProject = projects.find(p =>
-      String(p?.projectNo ?? '') === String(selectedRaw) || String(p?.id ?? '') === String(selectedRaw)
-    ) || null;
+  const handleProjectChange = useCallback(
+    (e) => {
+      const selectedRaw = e.target.value;
+      // Resolve selected project by matching against both projectNo and id (string/number tolerant)
+      const selectedProject =
+        projects.find(
+          (p) =>
+            String(p?.projectNo ?? "") === String(selectedRaw) ||
+            String(p?.id ?? "") === String(selectedRaw)
+        ) || null;
 
-    // Update global store display fields
-    useDrawingStore.setState({
-      projectNo: selectedProject ? (selectedProject.projectNo ?? selectedProject.id) : selectedRaw,
-      projectName: selectedProject ? (selectedProject.name || selectedProject.projectName || '') : '',
-    });
+      // Update global store display fields
+      useDrawingStore.setState({
+        projectNo: selectedProject
+          ? selectedProject.projectNo ?? selectedProject.id
+          : selectedRaw,
+        projectName: selectedProject
+          ? selectedProject.name || selectedProject.projectName || ""
+          : "",
+      });
 
-    // Resolve numeric project id
-    const pidNum = selectedProject && selectedProject.id != null ? Number(selectedProject.id) : NaN;
-    const pid = Number.isFinite(pidNum) ? pidNum : null;
-    setLocalSelectedProjectId(pid);
-    setSelectedProjectId(pid || null);
+      // Resolve numeric project id
+      const pidNum =
+        selectedProject && selectedProject.id != null
+          ? Number(selectedProject.id)
+          : NaN;
+      const pid = Number.isFinite(pidNum) ? pidNum : null;
+      setLocalSelectedProjectId(pid);
+      setSelectedProjectId(pid || null);
 
-    // Load packages for this project
-    if (pid) {
-      fetch(`/api/packages?projectId=${pid}`)
-        .then(r => (r.ok ? r.json() : []))
-        .then(arr => setPackages(Array.isArray(arr) ? arr : []))
-        .catch(() => setPackages([]));
-      setSelectedPackageId('');
-      setSelectedPackage(null);
-    } else {
-      setPackages([]);
-      setSelectedPackageId('');
-      setSelectedPackage(null);
-    }
-  }, [projects]);
+      // Load packages for this project
+      if (pid) {
+        fetch(`/api/packages?projectId=${pid}`)
+          .then((r) => (r.ok ? r.json() : []))
+          .then((arr) => setPackages(Array.isArray(arr) ? arr : []))
+          .catch(() => setPackages([]));
+        setSelectedPackageId("");
+        setSelectedPackage(null);
+      } else {
+        setPackages([]);
+        setSelectedPackageId("");
+        setSelectedPackage(null);
+      }
+    },
+    [projects]
+  );
 
   React.useEffect(() => {
     let mounted = true;
@@ -534,71 +614,131 @@ const PublishDrawing = () => {
       try {
         // Prefer server-side filtering for projects to reduce client-side mismatches
         const results = await Promise.allSettled([
-          fetch('/api/users/me', { cache: 'no-store' }),
+          fetch("/api/users/me", { cache: "no-store" }),
           // ask server to scope by TL when possible; server will use session for non-admins
-          fetch('/api/projects?scope=tl', { cache: 'no-store' }),
-          fetch('/api/clients', { cache: 'no-store' }),
+          fetch("/api/projects?scope=tl", { cache: "no-store" }),
+          fetch("/api/clients", { cache: "no-store" }),
         ]);
 
-        const ures = results[0], pres = results[1], cres = results[2];
+        const ures = results[0],
+          pres = results[1],
+          cres = results[2];
         let udata = null;
-        if (ures.status === 'fulfilled' && ures.value?.ok) {
-          try { udata = await ures.value.json(); } catch { udata = null; }
+        if (ures.status === "fulfilled" && ures.value?.ok) {
+          try {
+            udata = await ures.value.json();
+          } catch {
+            udata = null;
+          }
         }
         let plist = [];
-        if (pres.status === 'fulfilled' && pres.value?.ok) {
-          try { plist = await pres.value.json(); } catch { plist = []; }
+        if (pres.status === "fulfilled" && pres.value?.ok) {
+          try {
+            plist = await pres.value.json();
+          } catch {
+            plist = [];
+          }
         }
         let clist = [];
-        if (cres.status === 'fulfilled' && cres.value?.ok) {
-          try { clist = await cres.value.json(); } catch { clist = []; }
+        if (cres.status === "fulfilled" && cres.value?.ok) {
+          try {
+            clist = await cres.value.json();
+          } catch {
+            clist = [];
+          }
         }
 
-  if (mounted) setAllProjects(plist || []);
+        if (mounted) setAllProjects(plist || []);
 
         // Decide base projects for this user:
         // 1) If user has any projects where solTLId === user.id, treat as TL-mode (regardless of userType label)
         const tlIdNum = Number(udata?.id);
-        const tlProjects = (plist || []).filter(p => Number(p?.solTLId || p?.solTL?.id) === tlIdNum);
-        if ((udata && String(udata.userType || '').toLowerCase() !== 'admin') && tlProjects.length > 0) {
+        const tlProjects = (plist || []).filter(
+          (p) => Number(p?.solTLId || p?.solTL?.id) === tlIdNum
+        );
+        if (
+          udata &&
+          String(udata.userType || "").toLowerCase() !== "admin" &&
+          tlProjects.length > 0
+        ) {
           const base = tlProjects;
-          const tlClientIds = new Set(base.map(p => Number(p?.clientId || p?.client?.id)).filter(Boolean));
-          let tlClientsArr = (clist || []).filter(c => tlClientIds.has(Number(c.id)));
+          const tlClientIds = new Set(
+            base
+              .map((p) => Number(p?.clientId || p?.client?.id))
+              .filter(Boolean)
+          );
+          let tlClientsArr = (clist || []).filter((c) =>
+            tlClientIds.has(Number(c.id))
+          );
           // Fallback: infer clients directly from projects if clients API is empty or filtering yields none
           if (!tlClientsArr.length) {
             const seen = new Set();
-            tlClientsArr = base.map(p => {
-              const id = Number(p?.clientId || p?.client?.id);
-              const name = (p?.client?.name) || `Client ${id}`;
-              return id ? { id, name } : null;
-            }).filter(Boolean).filter(c => {
-              if (seen.has(c.id)) return false; seen.add(c.id); return true;
-            });
+            tlClientsArr = base
+              .map((p) => {
+                const id = Number(p?.clientId || p?.client?.id);
+                const name = p?.client?.name || `Client ${id}`;
+                return id ? { id, name } : null;
+              })
+              .filter(Boolean)
+              .filter((c) => {
+                if (seen.has(c.id)) return false;
+                seen.add(c.id);
+                return true;
+              });
           }
           if (mounted) {
             setBaseProjects(base);
             setClients(tlClientsArr);
             // Auto-select first client and filter projects accordingly
-            const firstId = tlClientsArr.length ? Number(tlClientsArr[0].id) : null;
+            const firstId = tlClientsArr.length
+              ? Number(tlClientsArr[0].id)
+              : null;
             setSelectedClientId(firstId);
             setStoreSelectedClientId(firstId);
-            setProjects(firstId != null ? base.filter(p => Number(p.clientId) === firstId || Number(p?.client?.id) === firstId || Number(p?.ownerId) === firstId) : base);
+            setProjects(
+              firstId != null
+                ? base.filter(
+                    (p) =>
+                      Number(p.clientId) === firstId ||
+                      Number(p?.client?.id) === firstId ||
+                      Number(p?.ownerId) === firstId
+                  )
+                : base
+            );
           }
-  } else if (udata && String(udata.userType || '').toLowerCase() !== 'admin') {
+        } else if (
+          udata &&
+          String(udata.userType || "").toLowerCase() !== "admin"
+        ) {
           // 2) Client-mode: if user tied to a client, show only that client's projects
           const cid = udata.clientId || udata.client?.id || null;
-          const base = cid != null ? (plist || []).filter(p => Number(p.clientId) === Number(cid) || Number(p?.client?.id) === Number(cid) || Number(p?.ownerId) === Number(cid)) : (plist || []);
+          const base =
+            cid != null
+              ? (plist || []).filter(
+                  (p) =>
+                    Number(p.clientId) === Number(cid) ||
+                    Number(p?.client?.id) === Number(cid) ||
+                    Number(p?.ownerId) === Number(cid)
+                )
+              : plist || [];
           if (mounted) {
             setBaseProjects(base);
             // If clients API empty, infer clients from base
             if (clist && clist.length) setClients(clist);
             else {
               const seen = new Set();
-              const inferred = base.map(p => {
-                const id = Number(p?.clientId || p?.client?.id);
-                const name = (p?.client?.name) || `Client ${id}`;
-                return id ? { id, name } : null;
-              }).filter(Boolean).filter(c => { if (seen.has(c.id)) return false; seen.add(c.id); return true; });
+              const inferred = base
+                .map((p) => {
+                  const id = Number(p?.clientId || p?.client?.id);
+                  const name = p?.client?.name || `Client ${id}`;
+                  return id ? { id, name } : null;
+                })
+                .filter(Boolean)
+                .filter((c) => {
+                  if (seen.has(c.id)) return false;
+                  seen.add(c.id);
+                  return true;
+                });
               setClients(inferred);
             }
             setSelectedClientId(cid != null ? Number(cid) : null);
@@ -611,11 +751,18 @@ const PublishDrawing = () => {
             if (clist && clist.length) setClients(clist);
             else {
               const seen = new Set();
-              const inferred = (plist || []).map(p => {
-                const id = Number(p?.clientId || p?.client?.id);
-                const name = (p?.client?.name) || `Client ${id}`;
-                return id ? { id, name } : null;
-              }).filter(Boolean).filter(c => { if (seen.has(c.id)) return false; seen.add(c.id); return true; });
+              const inferred = (plist || [])
+                .map((p) => {
+                  const id = Number(p?.clientId || p?.client?.id);
+                  const name = p?.client?.name || `Client ${id}`;
+                  return id ? { id, name } : null;
+                })
+                .filter(Boolean)
+                .filter((c) => {
+                  if (seen.has(c.id)) return false;
+                  seen.add(c.id);
+                  return true;
+                });
               setClients(inferred);
             }
             setProjects(plist || []);
@@ -623,15 +770,23 @@ const PublishDrawing = () => {
         }
         if (mounted) setUser(udata);
 
-        if (selectedClientId != null && udata && udata.userType && String(udata.userType).toLowerCase() !== 'admin') {
-          plist = (plist || []).filter(p =>
-            Number(p.clientId) === Number(selectedClientId) || Number(p?.client?.id) === Number(selectedClientId) || Number(p?.ownerId) === Number(selectedClientId)
+        if (
+          selectedClientId != null &&
+          udata &&
+          udata.userType &&
+          String(udata.userType).toLowerCase() !== "admin"
+        ) {
+          plist = (plist || []).filter(
+            (p) =>
+              Number(p.clientId) === Number(selectedClientId) ||
+              Number(p?.client?.id) === Number(selectedClientId) ||
+              Number(p?.ownerId) === Number(selectedClientId)
           );
         }
 
         if (mounted) setProjects(plist || []);
       } catch (e) {
-        console.warn('Failed to fetch user/projects/clients', e);
+        console.warn("Failed to fetch user/projects/clients", e);
         if (mounted) setProjects([]);
       } finally {
         if (mounted) setLoadingProjects(false);
@@ -639,25 +794,42 @@ const PublishDrawing = () => {
       }
     };
     fetchData();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   React.useEffect(() => {
-    if (selectedClientId == null || String(selectedClientId) === '') { setProjects(baseProjects || []); return; }
+    if (selectedClientId == null || String(selectedClientId) === "") {
+      setProjects(baseProjects || []);
+      return;
+    }
     const cid = String(selectedClientId);
     // Try server-side filtered list first
     (async () => {
       try {
         // include scope=tl to only get TL-visible projects for this client
-        const r = await fetch(`/api/projects?clientId=${encodeURIComponent(cid)}&scope=tl`, { cache: 'no-store' });
+        const r = await fetch(
+          `/api/projects?clientId=${encodeURIComponent(cid)}&scope=tl`,
+          { cache: "no-store" }
+        );
         if (r.ok) {
           const arr = await r.json();
-          if (Array.isArray(arr) && arr.length) { setProjects(arr); return; }
+          if (Array.isArray(arr) && arr.length) {
+            setProjects(arr);
+            return;
+          }
         }
       } catch {}
-      const filtered = (baseProjects || []).filter(p => matchesClient(p, cid));
-      console.info('[PublishDrawing] Effect filter projects (fallback)', { clientId: cid, baseCount: (baseProjects || []).length, filteredCount: filtered.length });
-      setProjects(filtered.length ? filtered : (baseProjects || []));
+      const filtered = (baseProjects || []).filter((p) =>
+        matchesClient(p, cid)
+      );
+      console.info("[PublishDrawing] Effect filter projects (fallback)", {
+        clientId: cid,
+        baseCount: (baseProjects || []).length,
+        filteredCount: filtered.length,
+      });
+      setProjects(filtered.length ? filtered : baseProjects || []);
     })();
   }, [selectedClientId, baseProjects]);
 
@@ -665,7 +837,9 @@ const PublishDrawing = () => {
   React.useEffect(() => {
     // When a package is selected locally, propagate the full object to the store
     if (selectedPackageId) {
-      const pkg = (packages || []).find(p => String(p.id) === String(selectedPackageId));
+      const pkg = (packages || []).find(
+        (p) => String(p.id) === String(selectedPackageId)
+      );
       setSelectedPackage(pkg || null);
     } else {
       setSelectedPackage(null);
@@ -673,66 +847,73 @@ const PublishDrawing = () => {
   }, [selectedPackageId, packages, setSelectedPackage]);
 
   /* ====== Extras / 3D: stage locally ONLY (no cloud here) ====== */
-  const handleFileChange = useCallback((e, type) => {
-    if (!useDrawingStore.getState().projectNo) return alert("Please select a Project No. first.");
-    const files = Array.from(e.target.files || []);
-    if (!files.length) return;
+  const handleFileChange = useCallback(
+    (e, type) => {
+      if (!useDrawingStore.getState().projectNo)
+        return alert("Please select a Project No. first.");
+      const files = Array.from(e.target.files || []);
+      if (!files.length) return;
 
-    if (type === "Extras" || type === "3D Model") {
-      const staged = files.map((file) => ({
-        id: crypto.randomUUID(),
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        fileType: type,
-        uploaded: true, // staged and ready (local)
-        uploadedAt: new Date().toISOString(),
-        file,          // keep actual File to put in ZIP later
-      }));
-      
-      // Directly add to the main tables instead of pending
-      if (type === 'Extras') {
-        const merged = [...safeArr(extras), ...staged];
-        const result = merged.map((f, idx) => ({ ...f, slno: idx + 1 }));
-        console.log('Setting extras to:', result);
-        setExtras(result);
-      } else {
-        const merged = [...safeArr(models), ...staged];
-        const result = merged.map((f, idx) => ({ ...f, slno: idx + 1 }));
-        console.log('Setting models to:', result);
-        setModels(result);
+      if (type === "Extras" || type === "3D Model") {
+        const staged = files.map((file) => ({
+          id: crypto.randomUUID(),
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          fileType: type,
+          uploaded: true, // staged and ready (local)
+          uploadedAt: new Date().toISOString(),
+          file, // keep actual File to put in ZIP later
+        }));
+
+        // Directly add to the main tables instead of pending
+        if (type === "Extras") {
+          const merged = [...safeArr(extras), ...staged];
+          const result = merged.map((f, idx) => ({ ...f, slno: idx + 1 }));
+          console.log("Setting extras to:", result);
+          setExtras(result);
+        } else {
+          const merged = [...safeArr(models), ...staged];
+          const result = merged.map((f, idx) => ({ ...f, slno: idx + 1 }));
+          console.log("Setting models to:", result);
+          setModels(result);
+        }
+
+        setSelectedAttachmentRows(new Set());
       }
-      
-      setSelectedAttachmentRows(new Set());
-    }
 
-    if (e?.target) e.target.value = "";
-  }, [extras, models, setExtras, setModels]);
+      if (e?.target) e.target.value = "";
+    },
+    [extras, models, setExtras, setModels]
+  );
 
-  const handleAttachPending = useCallback((id) => {
-    const item = pendingAttachments.find((p) => p.id === id);
-    if (!item) return;
+  const handleAttachPending = useCallback(
+    (id) => {
+      const item = pendingAttachments.find((p) => p.id === id);
+      if (!item) return;
 
-    if (item.fileType === 'Extras') {
-      setExtras((current) => {
-        const merged = [...safeArr(current), item];
-        return merged.map((f, idx) => ({ ...f, slno: idx + 1 }));
-      });
-    } else {
-      setModels((current) => {
-        const merged = [...safeArr(current), item];
-        return merged.map((f, idx) => ({ ...f, slno: idx + 1 }));
-      });
-    }
-    setPendingAttachments((prev) => safeArr(prev).filter((p) => p.id !== id));
-  }, [pendingAttachments, setExtras, setModels]);
+      if (item.fileType === "Extras") {
+        setExtras((current) => {
+          const merged = [...safeArr(current), item];
+          return merged.map((f, idx) => ({ ...f, slno: idx + 1 }));
+        });
+      } else {
+        setModels((current) => {
+          const merged = [...safeArr(current), item];
+          return merged.map((f, idx) => ({ ...f, slno: idx + 1 }));
+        });
+      }
+      setPendingAttachments((prev) => safeArr(prev).filter((p) => p.id !== id));
+    },
+    [pendingAttachments, setExtras, setModels]
+  );
 
   const handleAttachAllPending = useCallback(() => {
     const ready = safeArr(pendingAttachments);
     if (!ready.length) return;
 
-    const toExtras = ready.filter((r) => r.fileType === 'Extras');
-    const toModels = ready.filter((r) => r.fileType === '3D Model');
+    const toExtras = ready.filter((r) => r.fileType === "Extras");
+    const toModels = ready.filter((r) => r.fileType === "3D Model");
 
     if (toExtras.length) {
       setExtras((current) => {
@@ -751,9 +932,11 @@ const PublishDrawing = () => {
 
   const handleDeleteAttachments = useCallback(() => {
     if (!selectedAttachmentRows.size) return;
-    const updatedExtras = safeArr(extras).filter(item => !selectedAttachmentRows.has(item.id))
+    const updatedExtras = safeArr(extras)
+      .filter((item) => !selectedAttachmentRows.has(item.id))
       .map((item, i) => ({ ...item, slno: i + 1 }));
-    const updatedModels = safeArr(models).filter(item => !selectedAttachmentRows.has(item.id))
+    const updatedModels = safeArr(models)
+      .filter((item) => !selectedAttachmentRows.has(item.id))
       .map((item, i) => ({ ...item, slno: i + 1 }));
     setExtras(updatedExtras);
     setModels(updatedModels);
@@ -761,49 +944,63 @@ const PublishDrawing = () => {
   }, [extras, models, selectedAttachmentRows, setExtras, setModels]);
 
   /* ====== Excel upload & parse – keep File[] so we can ZIP ====== */
-  const handleExcelUpload = useCallback((e) => {
-    // Enforce: client -> project -> package before uploading Excel
-    if (selectedClientId == null) return alert("Please select a Client first.");
-    if (!selectedProjectId) return alert("Please select a Project first.");
-    if (!selectedPackageId) return alert("Please select a Package first.");
-    if (!useDrawingStore.getState().projectNo)
-      return alert("Please select a Project No. first.");
+  const handleExcelUpload = useCallback(
+    (e) => {
+      // Enforce: client -> project -> package before uploading Excel
+      if (selectedClientId == null)
+        return alert("Please select a Client first.");
+      if (!selectedProjectId) return alert("Please select a Project first.");
+      if (!selectedPackageId) return alert("Please select a Package first.");
+      if (!useDrawingStore.getState().projectNo)
+        return alert("Please select a Project No. first.");
 
-    const files = Array.from(e.target.files || []);
-    if (!files.length) return;
+      const files = Array.from(e.target.files || []);
+      if (!files.length) return;
 
-    // Keep actual File objects to include in ZIP later
-    setUploadedExcelFiles(prev => [...safeArr(prev), ...files]);
+      // Keep actual File objects to include in ZIP later
+      setUploadedExcelFiles((prev) => [...safeArr(prev), ...files]);
 
-    // Enqueue parse-excel job on server so CPU parsing is offloaded to worker
-    files.forEach(async (file) => {
-      // Always enqueue parse-excel; worker does parsing on server
-      const arrayBuffer = await file.arrayBuffer();
-      const b64 = Buffer.from(arrayBuffer).toString('base64');
-      const payload = { projectId: selectedProjectId, clientId: selectedClientId, originalName: file.name, uploaderId: user?.id || null, fileBase64: b64 };
-      const resp = await fetch('/api/jobs/enqueue', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'parse-excel', payload }) });
-      if (!resp.ok) throw new Error('Failed to enqueue parse job');
-      const { jobId } = await resp.json();
-      // Poll job status until succeeded or failed. Accept `{ job }` or top-level job.
-      const poll = async () => {
-        const s = await fetch(`/api/jobs/${jobId}`);
-        if (!s.ok) throw new Error('Job status fetch failed');
-        const js = await s.json();
-        const job = js && js.job ? js.job : js;
-        if (!job) throw new Error('No job');
-        if (job.status === 'succeeded') {
-          const rows = job.result?.rows || [];
-          setExcelFileData((prev) => [...prev, ...rows]);
-          return;
-        }
-        if (job.status === 'failed') {
-          throw new Error(job.error || 'Parse job failed');
-        }
-        setTimeout(poll, 1000);
-      };
-      poll();
-    });
-  }, [drawings.length, selectedClientId, selectedProjectId, selectedPackageId]);
+      // Enqueue parse-excel job on server so CPU parsing is offloaded to worker
+      files.forEach(async (file) => {
+        // Always enqueue parse-excel; worker does parsing on server
+        const arrayBuffer = await file.arrayBuffer();
+        const b64 = Buffer.from(arrayBuffer).toString("base64");
+        const payload = {
+          projectId: selectedProjectId,
+          clientId: selectedClientId,
+          originalName: file.name,
+          uploaderId: user?.id || null,
+          fileBase64: b64,
+        };
+        const resp = await fetch("/api/jobs/enqueue", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type: "parse-excel", payload }),
+        });
+        if (!resp.ok) throw new Error("Failed to enqueue parse job");
+        const { jobId } = await resp.json();
+        // Poll job status until succeeded or failed. Accept `{ job }` or top-level job.
+        const poll = async () => {
+          const s = await fetch(`/api/jobs/${jobId}`);
+          if (!s.ok) throw new Error("Job status fetch failed");
+          const js = await s.json();
+          const job = js && js.job ? js.job : js;
+          if (!job) throw new Error("No job");
+          if (job.status === "succeeded") {
+            const rows = job.result?.rows || [];
+            setExcelFileData((prev) => [...prev, ...rows]);
+            return;
+          }
+          if (job.status === "failed") {
+            throw new Error(job.error || "Parse job failed");
+          }
+          setTimeout(poll, 1000);
+        };
+        poll();
+      });
+    },
+    [drawings.length, selectedClientId, selectedProjectId, selectedPackageId]
+  );
 
   const attachExcelToTable = useCallback(() => {
     if (!useDrawingStore.getState().projectNo)
@@ -811,10 +1008,12 @@ const PublishDrawing = () => {
     if (!excelFileData.length)
       return alert("Please upload an Excel file first.");
 
-    const updated = [...safeArr(drawings), ...safeArr(excelFileData)].map((item, i) => ({
-      ...item,
-      slno: i + 1,
-    }));
+    const updated = [...safeArr(drawings), ...safeArr(excelFileData)].map(
+      (item, i) => ({
+        ...item,
+        slno: i + 1,
+      })
+    );
     setDrawings(updated);
     setExcelFileData([]);
     if (excelInputRef.current) excelInputRef.current.value = "";
@@ -860,7 +1059,8 @@ const PublishDrawing = () => {
           if (base.includes("%")) {
             const first = base.indexOf("%");
             const second = base.indexOf("%", first + 1);
-            if (first >= 0 && second > first) return normalizeToken(base.slice(first + 1, second));
+            if (first >= 0 && second > first)
+              return normalizeToken(base.slice(first + 1, second));
           }
           const beforeHash = base.split("#")[0];
           return normalizeToken(beforeHash);
@@ -878,27 +1078,34 @@ const PublishDrawing = () => {
     if (selectedClientId == null) return alert("Please select a Client first.");
     if (!selectedProjectId) return alert("Please select a Project first.");
     if (!selectedPackageId) return alert("Please select a Package first.");
-    if (!useDrawingStore.getState().projectNo) return alert("Please select a Project No. first.");
-    if (!Array.isArray(drawings) || drawings.length === 0) return alert("Please upload and attach Excel first to load drawings.");
-    if (!selectedFormat) return alert("Please select a Format before attaching files.");
-    if (!pendingExtraFiles.length) return alert("Please upload PDF files before attaching.");
+    if (!useDrawingStore.getState().projectNo)
+      return alert("Please select a Project No. first.");
+    if (!Array.isArray(drawings) || drawings.length === 0)
+      return alert("Please upload and attach Excel first to load drawings.");
+    if (!selectedFormat)
+      return alert("Please select a Format before attaching files.");
+    if (!pendingExtraFiles.length)
+      return alert("Please upload PDF files before attaching.");
 
     let regex = null;
     if (selectedFormat !== "No Format") regex = formatRegexMap[selectedFormat];
 
-  const matchedFiles = [];
-  const entriesToLog = [];
+    const matchedFiles = [];
+    const entriesToLog = [];
     const unmatchedFiles = [];
 
-    const updatedDrawings = drawings.map(row => ({ ...row, attachedPdfs: row.attachedPdfs ? [...row.attachedPdfs] : [] }));
+    const updatedDrawings = drawings.map((row) => ({
+      ...row,
+      attachedPdfs: row.attachedPdfs ? [...row.attachedPdfs] : [],
+    }));
 
-    pendingExtraFiles.forEach(file => {
+    pendingExtraFiles.forEach((file) => {
       const baseNoExt = file.name.replace(/\.pdf$/i, "");
       const normalizedBase = normalizeToken(baseNoExt);
       const matchesFormat = regex ? regex.test(file.name) : true;
 
       let targetRow = null;
-      if (matchesFormat && selectedFormat && selectedFormat !== 'No Format') {
+      if (matchesFormat && selectedFormat && selectedFormat !== "No Format") {
         const tokenRaw = extractDrgToken(file.name, selectedFormat);
         const token = stripFrTrSuffix(tokenRaw);
         if (token) targetRow = resolveRowForToken(token, file.name);
@@ -917,7 +1124,7 @@ const PublishDrawing = () => {
       // Best contained variant
       if (!targetRow) {
         const keys = Object.keys(drgNoMap);
-        let best = '';
+        let best = "";
         for (const k of keys) {
           if (normalizedBase.includes(k) && k.length > best.length) best = k;
         }
@@ -925,31 +1132,33 @@ const PublishDrawing = () => {
       }
 
       if (targetRow) {
-        const idx = updatedDrawings.findIndex(r => r.id === targetRow.id);
+        const idx = updatedDrawings.findIndex((r) => r.id === targetRow.id);
         if (idx >= 0) {
           const row = updatedDrawings[idx];
           row.attachedPdfs = [file]; // enforce single PDF per drawing: latest wins
           // Validate revision in filename vs Excel Rev cell
           try {
-            const ok = checkRevisionMatch(row?.rev ?? '', file.name);
+            const ok = checkRevisionMatch(row?.rev ?? "", file.name);
             if (!ok) {
               const fnRev = extractRevisionFromFileName(file.name);
-              row.attachConflict = `Filename rev '${fnRev ?? '-'}' does not match Rev cell '${(row?.rev ?? '-')}'`;
+              row.attachConflict = `Filename rev '${
+                fnRev ?? "-"
+              }' does not match Rev cell '${row?.rev ?? "-"}'`;
             } else {
-              row.attachConflict = '';
+              row.attachConflict = "";
             }
           } catch {}
           matchedFiles.push(file);
           // Collect entry for immediate DB logging
-          const dNo = row?.drgNo || row?.drawingNo || '';
-          const cat = normalizeCategory(row?.category || '');
+          const dNo = row?.drgNo || row?.drawingNo || "";
+          const cat = normalizeCategory(row?.category || "");
           const rev = row?.rev || null;
           entriesToLog.push({
             drgNo: dNo,
             category: cat,
             revision: rev,
             fileNames: [file.name],
-            issueDate: new Date().toISOString().slice(0,10),
+            issueDate: new Date().toISOString().slice(0, 10),
           });
         } else {
           unmatchedFiles.push(file.name);
@@ -967,32 +1176,56 @@ const PublishDrawing = () => {
     if (unmatchedFiles.length > 0) {
       alert(
         `Some files could not be matched with any DrgNo using the selected format:\n` +
-        unmatchedFiles.map((f) => `- ${f}`).join("\n")
+          unmatchedFiles.map((f) => `- ${f}`).join("\n")
       );
     }
 
     setDrawings(updatedDrawings);
-    setDrawingExtras(prev => [...safeArr(prev), ...matchedFiles]);
+    setDrawingExtras((prev) => [...safeArr(prev), ...matchedFiles]);
     setPendingExtraFiles([]);
     if (pdfDrawingsInputRef.current) pdfDrawingsInputRef.current.value = "";
 
     // Fire-and-forget: enqueue publish-job so worker logs these matched files
     (async () => {
       try {
-        const cid = selectedClientId != null && /^\d+$/.test(String(selectedClientId)) ? Number(selectedClientId) : null;
-        const pid = selectedProjectId != null ? Number(selectedProjectId) : null;
-        const pkg = selectedPackageId != null && /^\d+$/.test(String(selectedPackageId)) ? Number(selectedPackageId) : undefined;
+        const cid =
+          selectedClientId != null && /^\d+$/.test(String(selectedClientId))
+            ? Number(selectedClientId)
+            : null;
+        const pid =
+          selectedProjectId != null ? Number(selectedProjectId) : null;
+        const pkg =
+          selectedPackageId != null && /^\d+$/.test(String(selectedPackageId))
+            ? Number(selectedPackageId)
+            : undefined;
         if (!cid || !pid || !entriesToLog.length) return;
-        await fetch('/api/jobs/enqueue', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: 'publish-job', payload: { clientId: cid, projectId: pid, packageId: pkg, drawings: entriesToLog } }),
+        await fetch("/api/jobs/enqueue", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: "publish-job",
+            payload: {
+              clientId: cid,
+              projectId: pid,
+              packageId: pkg,
+              drawings: entriesToLog,
+            },
+          }),
         });
       } catch (e) {
-        console.warn('enqueue publish-job failed:', e?.message || e);
+        console.warn("enqueue publish-job failed:", e?.message || e);
       }
     })();
-  }, [selectedFormat, pendingExtraFiles, drawings, drgNoMap, setDrawings, selectedClientId, selectedProjectId, selectedPackageId]);
+  }, [
+    selectedFormat,
+    pendingExtraFiles,
+    drawings,
+    drgNoMap,
+    setDrawings,
+    selectedClientId,
+    selectedProjectId,
+    selectedPackageId,
+  ]);
 
   /* ====== Modal ====== */
   const openModal = useCallback((row) => {
@@ -1002,7 +1235,7 @@ const PublishDrawing = () => {
     }
     setModalDrawingId(row.id ?? null);
     setModalFiles(row.attachedPdfs);
-    setSelectedModalFiles(new Set(row.attachedPdfs.map(f => f.name)));
+    setSelectedModalFiles(new Set(row.attachedPdfs.map((f) => f.name)));
     setShowModal(true);
   }, []);
 
@@ -1013,7 +1246,7 @@ const PublishDrawing = () => {
   }, []);
 
   const handleModalCheckboxChange = useCallback((fileName) => {
-    setSelectedModalFiles(prev => {
+    setSelectedModalFiles((prev) => {
       const updated = new Set(prev);
       if (updated.has(fileName)) updated.delete(fileName);
       else updated.add(fileName);
@@ -1021,16 +1254,20 @@ const PublishDrawing = () => {
     });
   }, []);
 
-  const handleSelectAllModal = useCallback((e) => {
-    if (e.target.checked) {
-      setSelectedModalFiles(new Set(modalFiles.map((f) => f.name)));
-    } else {
-      setSelectedModalFiles(new Set());
-    }
-  }, [modalFiles]);
+  const handleSelectAllModal = useCallback(
+    (e) => {
+      if (e.target.checked) {
+        setSelectedModalFiles(new Set(modalFiles.map((f) => f.name)));
+      } else {
+        setSelectedModalFiles(new Set());
+      }
+    },
+    [modalFiles]
+  );
 
   const handleDownloadSelected = useCallback(() => {
-    if (!selectedModalFiles.size) return alert("Please select files to download.");
+    if (!selectedModalFiles.size)
+      return alert("Please select files to download.");
     modalFiles.forEach((file) => {
       if (selectedModalFiles.has(file.name)) {
         const url = URL.createObjectURL(file);
@@ -1044,30 +1281,43 @@ const PublishDrawing = () => {
     });
   }, [modalFiles, selectedModalFiles]);
 
-  const handleRemoveModalFile = useCallback((fileName) => {
-    setModalFiles(prev => prev.filter((f) => (f?.name || f?.file?.name) !== fileName));
-    setDrawingExtras(prev => prev.filter((f) => (f?.name || f?.file?.name) !== fileName));
-    setSelectedModalFiles(prev => {
-      const updated = new Set(prev);
-      updated.delete(fileName);
-      return updated;
-    });
+  const handleRemoveModalFile = useCallback(
+    (fileName) => {
+      setModalFiles((prev) =>
+        prev.filter((f) => (f?.name || f?.file?.name) !== fileName)
+      );
+      setDrawingExtras((prev) =>
+        prev.filter((f) => (f?.name || f?.file?.name) !== fileName)
+      );
+      setSelectedModalFiles((prev) => {
+        const updated = new Set(prev);
+        updated.delete(fileName);
+        return updated;
+      });
 
-    setDrawings(prev => prev.map(d => {
-      if (!modalDrawingId || d.id !== modalDrawingId) return d;
-      const nextAttached = (d.attachedPdfs || []).filter((f) => (f?.name || f?.file?.name) !== fileName);
-      return { ...d, attachedPdfs: nextAttached };
-    }));
-  }, [modalDrawingId, setDrawings]);
+      setDrawings((prev) =>
+        prev.map((d) => {
+          if (!modalDrawingId || d.id !== modalDrawingId) return d;
+          const nextAttached = (d.attachedPdfs || []).filter(
+            (f) => (f?.name || f?.file?.name) !== fileName
+          );
+          return { ...d, attachedPdfs: nextAttached };
+        })
+      );
+    },
+    [modalDrawingId, setDrawings]
+  );
 
   /* ====== Category mapping ====== */
   const mapCategoryToType = useCallback((cat) => {
-    const c = String(cat || '').trim().toUpperCase();
-    if (c === 'A') return 'Shop Drawing';
-    if (c === 'G') return 'Erection Drawing';
-    if (c === 'W') return 'Part Drawing';
-    if (!c) return '-';
-    return 'Other';
+    const c = String(cat || "")
+      .trim()
+      .toUpperCase();
+    if (c === "A") return "Shop Drawing";
+    if (c === "G") return "Erection Drawing";
+    if (c === "W") return "Part Drawing";
+    if (!c) return "-";
+    return "Other";
   }, []);
 
   /* ====== Approve ====== */
@@ -1078,17 +1328,28 @@ const PublishDrawing = () => {
       return;
     }
     // If nothing is explicitly selected, default to all items to keep UX flowing
-    const selectedDrawings = selectedRows.size > 0
-      ? drawings.filter((d) => selectedRows.has(d.id))
-      : safeArr(drawings);
+    const selectedDrawings =
+      selectedRows.size > 0
+        ? drawings.filter((d) => selectedRows.has(d.id))
+        : safeArr(drawings);
     const allAttachments = [...safeArr(extras), ...safeArr(models)];
-    const selectedAttachments = selectedAttachmentRows.size > 0
-      ? allAttachments.filter((a) => selectedAttachmentRows.has(a.id))
-      : allAttachments;
-    const selectedExtras = selectedAttachments.filter(a => a.fileType === 'Extras' || a.fileType === 'Extra');
-    const selectedModels = selectedAttachments.filter(a => a.fileType === '3D Model');
+    const selectedAttachments =
+      selectedAttachmentRows.size > 0
+        ? allAttachments.filter((a) => selectedAttachmentRows.has(a.id))
+        : allAttachments;
+    const selectedExtras = selectedAttachments.filter(
+      (a) => a.fileType === "Extras" || a.fileType === "Extra"
+    );
+    const selectedModels = selectedAttachments.filter(
+      (a) => a.fileType === "3D Model"
+    );
 
-    if (safeArr(selectedDrawings).length + safeArr(selectedExtras).length + safeArr(selectedModels).length === 0) {
+    if (
+      safeArr(selectedDrawings).length +
+        safeArr(selectedExtras).length +
+        safeArr(selectedModels).length ===
+      0
+    ) {
       alert("No drawings or attachments available to approve.");
       return;
     }
@@ -1096,8 +1357,21 @@ const PublishDrawing = () => {
     setApprovedDrawings(selectedDrawings);
     setApprovedExtras(selectedExtras);
     setApprovedModels(selectedModels);
-    router.push("/dashboard/project/project/publish_drawings/hybrid_publish_drawings");
-  }, [drawings, extras, models, selectedRows, selectedAttachmentRows, setProjectDetails, setApprovedDrawings, setApprovedExtras, setApprovedModels, router]);
+    router.push(
+      "/dashboard/project/project/publish_drawings/hybrid_publish_drawings"
+    );
+  }, [
+    drawings,
+    extras,
+    models,
+    selectedRows,
+    selectedAttachmentRows,
+    setProjectDetails,
+    setApprovedDrawings,
+    setApprovedExtras,
+    setApprovedModels,
+    router,
+  ]);
 
   /* ====== ZIP creation (Code #2 behavior) ======
      - Drawings -> Drawing/<Shop|Erection|Part|Other>/
@@ -1106,16 +1380,18 @@ const PublishDrawing = () => {
   */
   const handleDownloadAllFiles = useCallback(async () => {
     // Guard: require at least one drawing PDF to be attached
-    const hasAnyPdf = safeArr(drawings).some(d => Array.isArray(d.attachedPdfs) && d.attachedPdfs.length > 0);
+    const hasAnyPdf = safeArr(drawings).some(
+      (d) => Array.isArray(d.attachedPdfs) && d.attachedPdfs.length > 0
+    );
     if (!hasAnyPdf) {
-      alert('Please attach at least one PDF drawing before downloading.');
+      alert("Please attach at least one PDF drawing before downloading.");
       return;
     }
     const zip = new JSZip();
     const rootFolder = zip.folder("Drawing");
 
     const getCategoryFolder = (cat) => {
-      const c = String(cat || '').trim();
+      const c = String(cat || "").trim();
       if (c === "A") return "Shop Drawings";
       if (c === "G") return "Erection Drawings";
       if (c === "W") return "Part Drawings";
@@ -1123,11 +1399,11 @@ const PublishDrawing = () => {
     };
 
     // 1) Drawings into category subfolders
-    safeArr(drawings).forEach(d => {
+    safeArr(drawings).forEach((d) => {
       if (d.attachedPdfs && d.attachedPdfs.length) {
         const folderName = getCategoryFolder(d.category?.toString().trim());
         const subFolder = rootFolder && rootFolder.folder(folderName);
-        d.attachedPdfs.forEach(file => {
+        d.attachedPdfs.forEach((file) => {
           const f = file?.file || file;
           if (f instanceof File) {
             subFolder && subFolder.file(f.name, f);
@@ -1143,7 +1419,7 @@ const PublishDrawing = () => {
       list.forEach((entry) => {
         const f = entry?.file || (entry instanceof File ? entry : null);
         if (!f) return;
-        const ext = (f.name.split('.').pop() || "UNKNOWN").toUpperCase();
+        const ext = (f.name.split(".").pop() || "UNKNOWN").toUpperCase();
         const extFolder = zip.folder(ext);
         extFolder && extFolder.file(f.name, f);
       });
@@ -1156,7 +1432,7 @@ const PublishDrawing = () => {
       const excelBase = rootFolder && rootFolder.folder("Excel");
       uploadedExcelFiles.forEach((f) => {
         if (!f) return;
-        const ext = (f.name.split('.').pop() || "UNKNOWN").toUpperCase(); // XLS / XLSX
+        const ext = (f.name.split(".").pop() || "UNKNOWN").toUpperCase(); // XLS / XLSX
         const excelExtFolder = excelBase && excelBase.folder(ext);
         (excelExtFolder || excelBase || rootFolder || zip).file(f.name, f);
       });
@@ -1168,238 +1444,337 @@ const PublishDrawing = () => {
   }, [drawings, extras, models, uploadedExcelFiles]);
 
   /* ====== Table renderers (same UX as Code #1) ====== */
-  const renderTable = useCallback((files = [], isDrawing = false, selection = null, onCheck = null) => {
-    const normalized = Array.isArray(files)
-      ? files
-      : (files && typeof files[Symbol.iterator] === 'function' ? Array.from(files) : []);
+  const renderTable = useCallback(
+    (files = [], isDrawing = false, selection = null, onCheck = null) => {
+      const normalized = Array.isArray(files)
+        ? files
+        : files && typeof files[Symbol.iterator] === "function"
+        ? Array.from(files)
+        : [];
 
-    if (normalized.length === 0) {
-      // For attachment tables with selection capability, show empty table structure
-      if (!isDrawing && selection && onCheck) {
-        // Show empty table with headers for attachments
+      if (normalized.length === 0) {
+        // For attachment tables with selection capability, show empty table structure
+        if (!isDrawing && selection && onCheck) {
+          // Show empty table with headers for attachments
+          return (
+            <div className="overflow-auto max-h-64 mt-2 border rounded-lg">
+              <table className="min-w-full table-fixed border-collapse rounded-sm overflow-hidden">
+                <thead>
+                  <tr className="bg-cyan-800 text-white text-sm">
+                    <th className="border px-2 py-1 rounded-tl-lg">S.No.</th>
+                    <th className="border px-2 py-1">
+                      <input type="checkbox" disabled checked={false} /> Select
+                      All
+                    </th>
+                    <th className="border px-2 py-1">File Name</th>
+                    <th className="border px-2 py-1">Type</th>
+                    <th className="border px-2 py-1">Size</th>
+                    <th className="border px-2 py-1">Upload Date</th>
+                    <th className="border px-2 py-1">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td
+                      colSpan="7"
+                      className="text-center text-red-600 font-semibold py-4"
+                    >
+                      No files uploaded
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          );
+        }
+
+        // Default empty state for other cases
         return (
-          <div className="overflow-auto max-h-64 mt-2 border rounded-lg">
-            <table className="min-w-full table-fixed border-collapse rounded-sm overflow-hidden">
-              <thead>
-                <tr className="bg-cyan-800 text-white text-sm">
-                  <th className="border px-2 py-1 rounded-tl-lg">S.No.</th>
-                  <th className="border px-2 py-1">
-                    <input
-                      type="checkbox"
-                      disabled
-                      checked={false}
-                    />{" "}
-                    Select All
-                  </th>
-                  <th className="border px-2 py-1">File Name</th>
-                  <th className="border px-2 py-1">Type</th>
-                  <th className="border px-2 py-1">Size</th>
-                  <th className="border px-2 py-1">Upload Date</th>
-                  <th className="border px-2 py-1">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td colSpan="7" className="text-center text-red-600 font-semibold py-4">
-                    No files uploaded
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+          <div className="text-center text-red-600 font-semibold py-2">
+            {isDrawing ? "No Drawings Are Available" : "No files uploaded"}
           </div>
         );
       }
-      
-      // Default empty state for other cases
+
+      const isParsed = isDrawing && normalized[0] && "drgNo" in normalized[0];
+
+      // For drawings, show conflicts first then missing attachments
+      const viewFiles = (() => {
+        if (!isDrawing) return normalized;
+        const withIndex = normalized.map((f, i) => ({ f, i }));
+        withIndex.sort((a, b) => {
+          const aConflict = revisionConflicts.has(a.f?.id);
+          const bConflict = revisionConflicts.has(b.f?.id);
+          if (aConflict !== bConflict) return aConflict ? -1 : 1;
+
+          const aHasAttachment =
+            Array.isArray(a.f?.attachedPdfs) && a.f.attachedPdfs.length > 0;
+          const bHasAttachment =
+            Array.isArray(b.f?.attachedPdfs) && b.f.attachedPdfs.length > 0;
+          if (aHasAttachment !== bHasAttachment) return aHasAttachment ? 1 : -1;
+
+          return a.i - b.i;
+        });
+        return withIndex.map(({ f }) => f);
+      })();
+
       return (
-        <div className="text-center text-red-600 font-semibold py-2">
-          {isDrawing ? 'No Drawings Are Available' : 'No files uploaded'}
-        </div>
-      );
-    }
+        <div className="overflow-auto max-h-64 mt-2 border rounded-lg">
+          <table className="min-w-full table-fixed border-collapse rounded-sm overflow-hidden">
+            <thead>
+              <tr className="bg-cyan-800 text-white text-sm">
+                <th className="border px-2 py-1 rounded-tl-lg">S.No.</th>
+                {(isDrawing && isParsed) ||
+                (!isDrawing && selection && onCheck) ? (
+                  <th className="border px-2 py-1">
+                    <input
+                      type="checkbox"
+                      checked={
+                        selection instanceof Set &&
+                        selection.size === viewFiles.length &&
+                        viewFiles.length > 0
+                      }
+                      onChange={(e) =>
+                        onCheck?.(
+                          e.target.checked
+                            ? new Set(viewFiles.map((f) => f.id))
+                            : new Set()
+                        )
+                      }
+                    />{" "}
+                    Select All
+                  </th>
+                ) : null}
+                {isDrawing ? (
+                  <>
+                    <th className="border px-2 py-1">DrgNo.</th>
+                    <th className="border px-2 py-1">Item</th>
+                    <th className="border px-2 py-1">Rev</th>
+                    <th className="border px-2 py-1">Prev Rev</th>
+                    <th className="border px-2 py-1">Modeler</th>
+                    <th className="border px-2 py-1">Detailer</th>
+                    <th className="border px-2 py-1">Checker</th>
+                    <th className="border px-2 py-1">Status</th>
+                    <th className="border px-2 py-1">Type</th>
+                    <th className="border px-2 py-1">Attached</th>
+                    <th className="border px-2 py-1">View</th>
+                    <th className="border px-2 py-1">Drg Conflict</th>
+                    <th className="border px-2 py-1">Attach Conflict</th>
+                  </>
+                ) : (
+                  <>
+                    <th className="border px-2 py-1">File Name</th>
+                    <th className="border px-2 py-1">Type</th>
+                    <th className="border px-2 py-1">Size</th>
+                    <th className="border px-2 py-1">Upload Date</th>
+                    <th className="border px-2 py-1">Status</th>
+                  </>
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {viewFiles.map((file, index) => {
+                const hasRevisionConflict =
+                  isDrawing && revisionConflicts.has(file?.id);
+                const hasAttachConflict =
+                  isDrawing && !!String(file?.attachConflict || "").trim();
+                const revMessage = isDrawing
+                  ? revisionConflicts.get(file?.id) || ""
+                  : "";
+                // Resolve prev revision: prefer filename-based match; fallback to drawing+category
+                let prevRev = "";
+                const firstPdfName =
+                  Array.isArray(file?.attachedPdfs) &&
+                  file.attachedPdfs.length > 0
+                    ? file.attachedPdfs[0]?.name
+                    : null;
+                if (firstPdfName) {
+                  const fnameKey = `file::${String(firstPdfName)
+                    .trim()
+                    .toLowerCase()}`;
+                  prevRev = prevRevMap[fnameKey] ?? "";
+                }
+                if (!prevRev) {
+                  const dr = isDrawing
+                    ? file?.drgNo ?? file?.drawingNo ?? "-"
+                    : "-";
+                  const catKeyRaw = file?.category ?? "";
+                  const { normDr, normCat } = normalizeDrawingKey(
+                    dr,
+                    catKeyRaw
+                  );
+                  prevRev =
+                    prevRevMap[`${normDr}::${normCat}`] ??
+                    prevRevMap[normDr] ??
+                    "";
+                }
 
-    const isParsed = isDrawing && normalized[0] && "drgNo" in normalized[0];
-
-    // For drawings, show conflicts first then missing attachments
-    const viewFiles = (() => {
-      if (!isDrawing) return normalized;
-      const withIndex = normalized.map((f, i) => ({ f, i }));
-      withIndex.sort((a, b) => {
-        const aConflict = revisionConflicts.has(a.f?.id);
-        const bConflict = revisionConflicts.has(b.f?.id);
-        if (aConflict !== bConflict) return aConflict ? -1 : 1;
-
-        const aHasAttachment = Array.isArray(a.f?.attachedPdfs) && a.f.attachedPdfs.length > 0;
-        const bHasAttachment = Array.isArray(b.f?.attachedPdfs) && b.f.attachedPdfs.length > 0;
-        if (aHasAttachment !== bHasAttachment) return aHasAttachment ? 1 : -1;
-
-        return a.i - b.i;
-      });
-      return withIndex.map(({ f }) => f);
-    })();
-
-    return (
-      <div className="overflow-auto max-h-64 mt-2 border rounded-lg">
-        <table className="min-w-full table-fixed border-collapse rounded-sm overflow-hidden">
-          <thead>
-            <tr className="bg-cyan-800 text-white text-sm">
-              <th className="border px-2 py-1 rounded-tl-lg">S.No.</th>
-              {(isDrawing && isParsed) || (!isDrawing && selection && onCheck) ? (
-                <th className="border px-2 py-1">
-                  <input
-                    type="checkbox"
-                    checked={(selection instanceof Set) && selection.size === viewFiles.length && viewFiles.length > 0}
-                    onChange={(e) =>
-                      onCheck?.(e.target.checked ? new Set(viewFiles.map((f) => f.id)) : new Set())
-                    }
-                  />{" "}
-                  Select All
-                </th>
-              ) : null}
-              {isDrawing ? (
-                <>
-                  <th className="border px-2 py-1">DrgNo.</th>
-                  <th className="border px-2 py-1">Item</th>
-                  <th className="border px-2 py-1">Rev</th>
-                  <th className="border px-2 py-1">Prev Rev</th>
-                  <th className="border px-2 py-1">Modeler</th>
-                  <th className="border px-2 py-1">Detailer</th>
-                  <th className="border px-2 py-1">Checker</th>
-                  <th className="border px-2 py-1">Status</th>
-                  <th className="border px-2 py-1">Type</th>
-                  <th className="border px-2 py-1">Attached</th>
-                  <th className="border px-2 py-1">View</th>
-                  <th className="border px-2 py-1">Drg Conflict</th>
-                  <th className="border px-2 py-1">Attach Conflict</th>
-                </>
-              ) : (
-                <>
-                  <th className="border px-2 py-1">File Name</th>
-                  <th className="border px-2 py-1">Type</th>
-                  <th className="border px-2 py-1">Size</th>
-                  <th className="border px-2 py-1">Upload Date</th>
-                  <th className="border px-2 py-1">Status</th>
-                </>
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {viewFiles.map((file, index) => {
-              const hasRevisionConflict = isDrawing && revisionConflicts.has(file?.id);
-              const hasAttachConflict = isDrawing && !!String(file?.attachConflict || '').trim();
-              const revMessage = isDrawing ? (revisionConflicts.get(file?.id) || '') : '';
-              // Resolve prev revision: prefer filename-based match; fallback to drawing+category
-              let prevRev = '';
-              const firstPdfName = (Array.isArray(file?.attachedPdfs) && file.attachedPdfs.length > 0) ? (file.attachedPdfs[0]?.name) : null;
-              if (firstPdfName) {
-                const fnameKey = `file::${String(firstPdfName).trim().toLowerCase()}`;
-                prevRev = prevRevMap[fnameKey] ?? '';
-              }
-              if (!prevRev) {
-                const dr = isDrawing ? (file?.drgNo ?? file?.drawingNo ?? '-') : '-';
-                const catKeyRaw = file?.category ?? '';
-                const { normDr, normCat } = normalizeDrawingKey(dr, catKeyRaw);
-                prevRev = prevRevMap[`${normDr}::${normCat}`] ?? prevRevMap[normDr] ?? '';
-              }
-
-              return (
-                <tr
-                  key={file.id || `${file.name}-${index}`}
-                  className={`text-center text-sm ${hasAttachConflict ? 'bg-red-100' : (hasRevisionConflict ? 'bg-yellow-100' : '')}`}
-                >
-                  <td className="border px-2 py-1">{isDrawing ? (index + 1) : (file.slno || index + 1)}</td>
-                  {((isDrawing && isParsed) || (!isDrawing && selection && onCheck)) && (
+                return (
+                  <tr
+                    key={file.id || `${file.name}-${index}`}
+                    className={`text-center text-sm ${
+                      hasAttachConflict
+                        ? "bg-red-100"
+                        : hasRevisionConflict
+                        ? "bg-yellow-100"
+                        : ""
+                    }`}
+                  >
                     <td className="border px-2 py-1">
-                      <input
-                        type="checkbox"
-                        checked={(selection instanceof Set) && selection.has(file.id)}
-                        onChange={() => {
-                          const updated = selection instanceof Set ? new Set(selection) : new Set();
-                          if (updated.has(file.id)) updated.delete(file.id);
-                          else updated.add(file.id);
-                          onCheck?.(updated);
-                        }}
-                      />
+                      {isDrawing ? index + 1 : file.slno || index + 1}
                     </td>
-                  )}
-                  {isDrawing ? (
-                    <>
-                      <td className="border px-2 py-1">{isParsed ? file.drgNo : file.name}</td>
-                      <td className="border px-2 py-1">{file.item || "-"}</td>
-                      <td className="border px-2 py-1">{file.rev === "0" ? "0" : (file.rev || "-")}</td>
-                      <td className="border px-2 py-1">{prevRev || (prevRevLoading ? '...' : 'NA')}</td>
-                      <td className="border px-2 py-1">{file.modeler || "-"}</td>
-                      <td className="border px-2 py-1">{file.detailer || "-"}</td>
-                      <td className="border px-2 py-1">{file.checker || "-"}</td>
-                      <td className="border px-2 py-1">{file.status || "-"}</td>
-                      <td className="border px-2 py-1">{mapCategoryToType(file.category)}</td>
+                    {((isDrawing && isParsed) ||
+                      (!isDrawing && selection && onCheck)) && (
                       <td className="border px-2 py-1">
-                        {Array.isArray(file.attachedPdfs) && file.attachedPdfs.length > 0 ? (
-                          <span className="text-green-600 font-semibold" title="Files attached">✓</span>
-                        ) : (
-                          <span className="text-red-600 font-semibold" title="No files attached">✗</span>
-                        )}
-                      </td>
-                      <td
-                        className="border px-2 py-1 text-blue-600 font-semibold cursor-pointer"
-                        onClick={() => openModal(file)}
-                      >
-                        View
-                      </td>
-                      <td className="border px-2 py-1">
-                        {hasRevisionConflict ? (
-                          <span className="text-red-600 text-xs font-semibold" title={revMessage}>
-                            {revMessage}
-                          </span>
-                        ) : null}
-                      </td>
-                      <td className="border px-2 py-1">
-                        <textarea
-                          className="w-full text-xs resize-none"
-                          value={file.attachConflict || ""}
-                          onChange={(e) => {
-                            setDrawings(drawings.map(d =>
-                              d.id === file.id ? { ...d, attachConflict: e.target.value } : d
-                            ));
+                        <input
+                          type="checkbox"
+                          checked={
+                            selection instanceof Set && selection.has(file.id)
+                          }
+                          onChange={() => {
+                            const updated =
+                              selection instanceof Set
+                                ? new Set(selection)
+                                : new Set();
+                            if (updated.has(file.id)) updated.delete(file.id);
+                            else updated.add(file.id);
+                            onCheck?.(updated);
                           }}
                         />
                       </td>
-                    </>
-                  ) : (
-                    <>
-                      <td className="border px-2 py-1">{file.name || 'Unknown File'}</td>
-                      <td className="border px-2 py-1">{file.fileType || 'Extra'}</td>
-                      <td className="border px-2 py-1">
-                        {file.size && typeof file.size === 'number' ? `${(file.size / 1024).toFixed(1)} KB` : '-'}
-                      </td>
-                      <td className="border px-2 py-1">
-                        {file.uploadedAt ? new Date(file.uploadedAt).toLocaleDateString() : '-'}
-                      </td>
-                      <td className="border px-2 py-1">
-                        {file.error ? (
-                          <span className="px-2 py-1 rounded text-xs font-semibold bg-red-100 text-red-800" title={file.error}>
-                            Failed
-                          </span>
-                        ) : (
-                          <span className="px-2 py-1 rounded text-xs font-semibold bg-green-100 text-green-800">
-                            Attached
-                          </span>
-                        )}
-                      </td>
-                    </>
-                  )}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    );
-  }, [openModal, drawings, setDrawings, prevRevMap, prevRevLoading, revisionConflicts]);
+                    )}
+                    {isDrawing ? (
+                      <>
+                        <td className="border px-2 py-1">
+                          {isParsed ? file.drgNo : file.name}
+                        </td>
+                        <td className="border px-2 py-1">{file.item || "-"}</td>
+                        <td className="border px-2 py-1">
+                          {file.rev === "0" ? "0" : file.rev || "-"}
+                        </td>
+                        <td className="border px-2 py-1">
+                          {prevRev || (prevRevLoading ? "..." : "NA")}
+                        </td>
+                        <td className="border px-2 py-1">
+                          {file.modeler || "-"}
+                        </td>
+                        <td className="border px-2 py-1">
+                          {file.detailer || "-"}
+                        </td>
+                        <td className="border px-2 py-1">
+                          {file.checker || "-"}
+                        </td>
+                        <td className="border px-2 py-1">
+                          {file.status || "-"}
+                        </td>
+                        <td className="border px-2 py-1">
+                          {mapCategoryToType(file.category)}
+                        </td>
+                        <td className="border px-2 py-1">
+                          {Array.isArray(file.attachedPdfs) &&
+                          file.attachedPdfs.length > 0 ? (
+                            <span
+                              className="text-green-600 font-semibold"
+                              title="Files attached"
+                            >
+                              ✓
+                            </span>
+                          ) : (
+                            <span
+                              className="text-red-600 font-semibold"
+                              title="No files attached"
+                            >
+                              ✗
+                            </span>
+                          )}
+                        </td>
+                        <td
+                          className="border px-2 py-1 text-blue-600 font-semibold cursor-pointer"
+                          onClick={() => openModal(file)}
+                        >
+                          View
+                        </td>
+                        <td className="border px-2 py-1">
+                          {hasRevisionConflict ? (
+                            <span
+                              className="text-red-600 text-xs font-semibold"
+                              title={revMessage}
+                            >
+                              {revMessage}
+                            </span>
+                          ) : null}
+                        </td>
+                        <td className="border px-2 py-1">
+                          <textarea
+                            className="w-full text-xs resize-none"
+                            value={file.attachConflict || ""}
+                            onChange={(e) => {
+                              setDrawings(
+                                drawings.map((d) =>
+                                  d.id === file.id
+                                    ? { ...d, attachConflict: e.target.value }
+                                    : d
+                                )
+                              );
+                            }}
+                          />
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="border px-2 py-1">
+                          {file.name || "Unknown File"}
+                        </td>
+                        <td className="border px-2 py-1">
+                          {file.fileType || "Extra"}
+                        </td>
+                        <td className="border px-2 py-1">
+                          {file.size && typeof file.size === "number"
+                            ? `${(file.size / 1024).toFixed(1)} KB`
+                            : "-"}
+                        </td>
+                        <td className="border px-2 py-1">
+                          {file.uploadedAt
+                            ? new Date(file.uploadedAt).toLocaleDateString()
+                            : "-"}
+                        </td>
+                        <td className="border px-2 py-1">
+                          {file.error ? (
+                            <span
+                              className="px-2 py-1 rounded text-xs font-semibold bg-red-100 text-red-800"
+                              title={file.error}
+                            >
+                              Failed
+                            </span>
+                          ) : (
+                            <span className="px-2 py-1 rounded text-xs font-semibold bg-green-100 text-green-800">
+                              Attached
+                            </span>
+                          )}
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      );
+    },
+    [
+      openModal,
+      drawings,
+      setDrawings,
+      prevRevMap,
+      prevRevLoading,
+      revisionConflicts,
+    ]
+  );
 
   const handleDeleteSelected = useCallback(() => {
     const updated = drawings
-      .filter(item => !selectedRows.has(item.id))
+      .filter((item) => !selectedRows.has(item.id))
       .map((item, i) => ({ ...item, slno: i + 1 }));
     setDrawings(updated);
     setSelectedRows(new Set());
@@ -1413,25 +1788,26 @@ const PublishDrawing = () => {
       <div className="flex items-center space-x-4 mb-2">
         <label className="font-semibold">Client</label>
         <select
-          value={selectedClientId != null ? String(selectedClientId) : ''}
+          value={selectedClientId != null ? String(selectedClientId) : ""}
           onChange={(e) => {
             const raw = e.target.value;
             const localId = raw || null; // hold as string for robust equality checks
             setSelectedClientId(localId);
             // Update store using numeric when applicable
-            const storeId = localId != null && /^\d+$/.test(localId) ? Number(localId) : null;
+            const storeId =
+              localId != null && /^\d+$/.test(localId) ? Number(localId) : null;
             setStoreSelectedClientId(storeId);
             // Reset dependent selections
             setLocalSelectedProjectId(null);
             setSelectedProjectId(null);
-            setSelectedPackageId('');
+            setSelectedPackageId("");
             setSelectedPackage(null);
             // Filter projects using string-safe equality across possible fields
-            if (localId != null && localId !== '') {
-              const filtered = (baseProjects || []).filter(p => {
-                const pid = String(p?.clientId ?? '');
-                const pcid = String(p?.client?.id ?? '');
-                const owner = String(p?.ownerId ?? '');
+            if (localId != null && localId !== "") {
+              const filtered = (baseProjects || []).filter((p) => {
+                const pid = String(p?.clientId ?? "");
+                const pcid = String(p?.client?.id ?? "");
+                const owner = String(p?.ownerId ?? "");
                 return pid === localId || pcid === localId || owner === localId;
               });
               setProjects(filtered);
@@ -1442,9 +1818,13 @@ const PublishDrawing = () => {
           className="border rounded-md px-2 py-1 text-sm"
           disabled={loadingClients}
         >
-          <option value="">{loadingClients ? 'Loading Clients...' : 'Select Client'}</option>
+          <option value="">
+            {loadingClients ? "Loading Clients..." : "Select Client"}
+          </option>
           {clients.map((c) => (
-            <option key={c.id} value={String(c.id)}>{c.name || c.clientName || c.id}</option>
+            <option key={c.id} value={String(c.id)}>
+              {c.name || c.clientName || c.id}
+            </option>
           ))}
         </select>
 
@@ -1454,11 +1834,14 @@ const PublishDrawing = () => {
           onChange={handleProjectChange}
           className="border rounded-md px-2 py-1 text-sm"
           disabled={loadingProjects || !canSelectProject}
-          title={!canSelectProject ? 'Select Client first' : undefined}
+          title={!canSelectProject ? "Select Client first" : undefined}
         >
-          <option value="">{loadingProjects ? 'Loading...' : 'Select'}</option>
+          <option value="">{loadingProjects ? "Loading..." : "Select"}</option>
           {projects.map((proj) => (
-            <option key={proj.id || proj.projectNo} value={proj.projectNo || proj.id}>
+            <option
+              key={proj.id || proj.projectNo}
+              value={proj.projectNo || proj.id}
+            >
               {proj.projectNo || proj.id} - {proj.name || proj.projectName}
             </option>
           ))}
@@ -1471,16 +1854,26 @@ const PublishDrawing = () => {
           onChange={(e) => {
             const pid = e.target.value;
             setSelectedPackageId(pid);
-            const pkg = (packages || []).find(p => String(p.id) === String(pid));
+            const pkg = (packages || []).find(
+              (p) => String(p.id) === String(pid)
+            );
             setSelectedPackage(pkg || null);
           }}
           className="border rounded-md px-2 py-1 text-sm"
           disabled={!canSelectPackage || (packages || []).length === 0}
-          title={!canSelectPackage ? 'Select Project first' : undefined}
+          title={!canSelectPackage ? "Select Project first" : undefined}
         >
-          <option value="">{!selectedProjectId ? 'Select project first' : ((packages || []).length ? 'Select package' : 'No packages')}</option>
-          {(packages || []).map(p => (
-            <option key={p.id} value={p.id}>{p.name || p.packageNumber || `Package ${p.id}`}</option>
+          <option value="">
+            {!selectedProjectId
+              ? "Select project first"
+              : (packages || []).length
+              ? "Select package"
+              : "No packages"}
+          </option>
+          {(packages || []).map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name || p.packageNumber || `Package ${p.id}`}
+            </option>
           ))}
         </select>
 
@@ -1493,20 +1886,24 @@ const PublishDrawing = () => {
             if (!selectedProjectId || !selectedPackageId) return;
             setPrevOpen(true);
             setPrevLoading(true);
-            setPrevError('');
+            setPrevError("");
             setPrevRows([]);
             try {
               // Include full history for modal view
-              const url = `/api/project-drawings?projectId=${Number(selectedProjectId)}&packageId=${Number(selectedPackageId)}&all=1`;
+              const url = `/api/project-drawings?projectId=${Number(
+                selectedProjectId
+              )}&packageId=${Number(selectedPackageId)}&all=1`;
               const r = await fetch(url);
               if (!r.ok) {
-                const t = await r.text().catch(() => '');
+                const t = await r.text().catch(() => "");
                 throw new Error(t || `Request failed (${r.status})`);
               }
               const data = await r.json();
               setPrevRows(Array.isArray(data) ? data : []);
             } catch (err) {
-              setPrevError(err?.message || 'Failed to load previous submissions');
+              setPrevError(
+                err?.message || "Failed to load previous submissions"
+              );
             } finally {
               setPrevLoading(false);
             }
@@ -1531,9 +1928,15 @@ const PublishDrawing = () => {
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2 text-sm border-r ${activeTab === tab ? "bg-white font-semibold" : ""}`}
+            className={`px-4 py-2 text-sm border-r ${
+              activeTab === tab ? "bg-white font-semibold" : ""
+            }`}
           >
-            {tab} ({tab === "Drawings" ? drawings.length : (safeArr(extras).length + safeArr(models).length)})
+            {tab} (
+            {tab === "Drawings"
+              ? drawings.length
+              : safeArr(extras).length + safeArr(models).length}
+            )
           </button>
         ))}
       </div>
@@ -1550,9 +1953,18 @@ const PublishDrawing = () => {
                   <InfoPopover title="Excel upload rules">
                     <ul className="list-disc pl-5 space-y-1">
                       <li>Accepted: .xls, .xlsx (first sheet is read)</li>
-                      <li>Headers required: Dr No, Description, Rev, Rev Remarks, Mod By, Dr By, Ch By, Category</li>
-                      <li>Duplicate DrgNo entries are supported; Category decides the Type</li>
-                      <li>After upload, click “Attach .xls File” to add rows to the table</li>
+                      <li>
+                        Headers required: Dr No, Description, Rev, Rev Remarks,
+                        Mod By, Dr By, Ch By, Category
+                      </li>
+                      <li>
+                        Duplicate DrgNo entries are supported; Category decides
+                        the Type
+                      </li>
+                      <li>
+                        After upload, click “Attach .xls File” to add rows to
+                        the table
+                      </li>
                     </ul>
                   </InfoPopover>
                 </div>
@@ -1565,9 +1977,24 @@ const PublishDrawing = () => {
                     ref={excelInputRef}
                     className="file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-teal-700 file:text-white hover:file:bg-teal-800 disabled:opacity-50 disabled:cursor-not-allowed"
                     disabled={!canUploadExcel}
-                    title={!canUploadExcel ? 'Select Client → Project → Package before uploading Excel' : undefined}
+                    title={
+                      !canUploadExcel
+                        ? "Select Client → Project → Package before uploading Excel"
+                        : undefined
+                    }
                   />
-                  <button onClick={attachExcelToTable} className="bg-teal-800 text-white px-4 py-1.5 text-sm rounded disabled:opacity-50 disabled:cursor-not-allowed" disabled={!canUploadExcel || !excelFileData.length} title={!canUploadExcel ? 'Complete previous steps first' : (!excelFileData.length ? 'Upload Excel first' : undefined)}>
+                  <button
+                    onClick={attachExcelToTable}
+                    className="bg-teal-800 text-white px-4 py-1.5 text-sm rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={!canUploadExcel || !excelFileData.length}
+                    title={
+                      !canUploadExcel
+                        ? "Complete previous steps first"
+                        : !excelFileData.length
+                        ? "Upload Excel first"
+                        : undefined
+                    }
+                  >
                     Attach .xls File
                   </button>
                 </div>
@@ -1580,10 +2007,23 @@ const PublishDrawing = () => {
                   <InfoPopover title="PDF attachment rules">
                     <ul className="list-disc pl-5 space-y-1">
                       <li>Accepted: .pdf</li>
-                      <li>Select a naming format; files must match it unless you choose “No Format”</li>
-                      <li>Matching uses the drawing token (before first symbol like '-', ' ', '_', '['). Suffix FR/TR is ignored.</li>
-                      <li>If same DrgNo appears in multiple categories, the filename hints (main part/part/GA/erection) decide target row.</li>
-                      <li>Each drawing holds one PDF; the latest match replaces the previous.</li>
+                      <li>
+                        Select a naming format; files must match it unless you
+                        choose “No Format”
+                      </li>
+                      <li>
+                        Matching uses the drawing token (before first symbol
+                        like '-', ' ', '_', '['). Suffix FR/TR is ignored.
+                      </li>
+                      <li>
+                        If same DrgNo appears in multiple categories, the
+                        filename hints (main part/part/GA/erection) decide
+                        target row.
+                      </li>
+                      <li>
+                        Each drawing holds one PDF; the latest match replaces
+                        the previous.
+                      </li>
                     </ul>
                   </InfoPopover>
                 </div>
@@ -1595,7 +2035,9 @@ const PublishDrawing = () => {
                     ref={pdfDrawingsInputRef}
                     onChange={(e) => {
                       if (!canAttachPDF) {
-                        alert("Please complete steps: Select Client → Project → Package and attach Excel to load drawings.");
+                        alert(
+                          "Please complete steps: Select Client → Project → Package and attach Excel to load drawings."
+                        );
                         if (e?.target) e.target.value = "";
                         return;
                       }
@@ -1604,7 +2046,11 @@ const PublishDrawing = () => {
                     }}
                     className="file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-700 file:text-white hover:file:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed"
                     disabled={!canAttachPDF}
-                    title={!canAttachPDF ? 'Upload and attach Excel first to load drawings' : undefined}
+                    title={
+                      !canAttachPDF
+                        ? "Upload and attach Excel first to load drawings"
+                        : undefined
+                    }
                   />
                   <button
                     className="bg-teal-800 text-white px-4 py-1.5 text-sm rounded disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1618,36 +2064,55 @@ const PublishDrawing = () => {
                     onChange={(e) => {
                       const format = e.target.value;
                       setSelectedFormat(format);
-                      if (!pendingExtraFiles.length || format === "No Format") return;
+                      if (!pendingExtraFiles.length || format === "No Format")
+                        return;
                       const regex = formatRegexMap[format];
-                      const invalid = pendingExtraFiles.filter((f) => !regex.test(f.name));
+                      const invalid = pendingExtraFiles.filter(
+                        (f) => !regex.test(f.name)
+                      );
                       if (invalid.length > 0) {
                         alert(
                           `The following files do not match the selected format (${format}):\n` +
-                          invalid.map((f) => `- ${f.name}`).join("\n")
+                            invalid.map((f) => `- ${f.name}`).join("\n")
                         );
                       }
                     }}
                     className="border px-2 py-1.5 text-sm rounded disabled:opacity-50 disabled:cursor-not-allowed"
                     disabled={!canAttachPDF}
-                    title={!canAttachPDF ? 'Complete previous steps first' : undefined}
+                    title={
+                      !canAttachPDF
+                        ? "Complete previous steps first"
+                        : undefined
+                    }
                   >
                     <option value="">Select Format</option>
                     <option value="No Format">No Format</option>
                     {formatOptions.map((opt) => (
-                      <option key={opt} value={opt}>{opt}</option>
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
                     ))}
                   </select>
                 </div>
-                <p className="text-xs text-blue-900/70 mt-2">Select the format that matches your file naming.</p>
+                <p className="text-xs text-blue-900/70 mt-2">
+                  Select the format that matches your file naming.
+                </p>
               </div>
             </div>
 
             {/* Attached summary */}
             <div className="mt-3 mb-2 text-sm">
               <span className="font-semibold">Attached:</span>
-              <span className="ml-1">{attachmentStats.attached} / {attachmentStats.total}</span>
-              <span className={`ml-3 ${attachmentStats.missing > 0 ? 'text-red-600' : 'text-green-600'}`}>
+              <span className="ml-1">
+                {attachmentStats.attached} / {attachmentStats.total}
+              </span>
+              <span
+                className={`ml-3 ${
+                  attachmentStats.missing > 0
+                    ? "text-red-600"
+                    : "text-green-600"
+                }`}
+              >
                 (Missing: {attachmentStats.missing})
               </span>
             </div>
@@ -1657,7 +2122,10 @@ const PublishDrawing = () => {
             {renderTable(drawings, true, selectedRows, setSelectedRows)}
             {selectedRows.size > 0 && (
               <div className="flex justify-end mt-4">
-                <button onClick={handleDeleteSelected} className="bg-red-600 text-white px-6 py-2 text-sm rounded">
+                <button
+                  onClick={handleDeleteSelected}
+                  className="bg-red-600 text-white px-6 py-2 text-sm rounded"
+                >
                   Delete Selected
                 </button>
               </div>
@@ -1668,7 +2136,9 @@ const PublishDrawing = () => {
         {activeTab === "Attachments" && (
           <>
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 shadow-sm mb-2">
-              <div className="text-sm font-semibold text-amber-900 mb-2">Upload Attachments (Extra & 3D Model)</div>
+              <div className="text-sm font-semibold text-amber-900 mb-2">
+                Upload Attachments (Extra & 3D Model)
+              </div>
               <div className="flex gap-3 items-center flex-wrap">
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-gray-700">Extra:</span>
@@ -1691,14 +2161,20 @@ const PublishDrawing = () => {
                   />
                 </div>
               </div>
-
-
             </div>
 
-            {renderTable([...(safeArr(extras)), ...(safeArr(models))], false, selectedAttachmentRows, setSelectedAttachmentRows)}
+            {renderTable(
+              [...safeArr(extras), ...safeArr(models)],
+              false,
+              selectedAttachmentRows,
+              setSelectedAttachmentRows
+            )}
             {selectedAttachmentRows.size > 0 && (
               <div className="flex justify-end mt-4">
-                <button onClick={handleDeleteAttachments} className="bg-red-600 text-white px-6 py-2 text-sm rounded">
+                <button
+                  onClick={handleDeleteAttachments}
+                  className="bg-red-600 text-white px-6 py-2 text-sm rounded"
+                >
                   Delete Selected
                 </button>
               </div>
@@ -1713,7 +2189,11 @@ const PublishDrawing = () => {
           onClick={handleDownloadAllFiles}
           className="bg-teal-800 text-white px-4 py-2 rounded text-sm mr-2 disabled:opacity-50 disabled:cursor-not-allowed"
           disabled={attachmentStats.attached === 0}
-          title={attachmentStats.attached === 0 ? 'Attach at least one PDF drawing first' : undefined}
+          title={
+            attachmentStats.attached === 0
+              ? "Attach at least one PDF drawing first"
+              : undefined
+          }
         >
           Download Drawing
         </button>
@@ -1763,7 +2243,11 @@ const PublishDrawing = () => {
                     </td>
                     <td className="p-2">{file.name}</td>
                     <td className="p-2">
-                      <textarea className="border w-full px-1 py-1 text-xs" value={file.name} readOnly />
+                      <textarea
+                        className="border w-full px-1 py-1 text-xs"
+                        value={file.name}
+                        readOnly
+                      />
                     </td>
                     <td
                       className="p-2 text-blue-600 cursor-pointer"
@@ -1782,7 +2266,10 @@ const PublishDrawing = () => {
               >
                 Download
               </button>
-              <button onClick={closeModal} className="bg-gray-400 text-white px-4 py-1 text-sm rounded">
+              <button
+                onClick={closeModal}
+                className="bg-gray-400 text-white px-4 py-1 text-sm rounded"
+              >
                 Cancel
               </button>
             </div>
@@ -1801,9 +2288,16 @@ const PublishDrawing = () => {
               ✕
             </button>
             <div className="mb-3">
-              <div className="text-sm font-semibold">Previous submissions for package {String(selectedPackageId || '')}</div>
-              {prevLoading && <div className="text-xs text-gray-600 mt-1">Loading...</div>}
-              {prevError && <div className="text-xs text-red-600 mt-1">{prevError}</div>}
+              <div className="text-sm font-semibold">
+                Previous submissions for package{" "}
+                {String(selectedPackageId || "")}
+              </div>
+              {prevLoading && (
+                <div className="text-xs text-gray-600 mt-1">Loading...</div>
+              )}
+              {prevError && (
+                <div className="text-xs text-red-600 mt-1">{prevError}</div>
+              )}
             </div>
             <div className="max-h-[60vh] overflow-auto border rounded">
               <table className="w-full text-sm">
@@ -1819,30 +2313,43 @@ const PublishDrawing = () => {
                 <tbody>
                   {!prevLoading && (!prevRows || prevRows.length === 0) && (
                     <tr>
-                      <td colSpan="5" className="text-center text-red-600 py-3">No previous submissions found</td>
+                      <td colSpan="5" className="text-center text-red-600 py-3">
+                        No previous submissions found
+                      </td>
                     </tr>
                   )}
-                  {Array.isArray(prevRows) && prevRows.map((row, idx) => {
-                    const dr = row?.drgNo ?? row?.drg_no ?? '-';
-                    const rev = row?.revision ?? row?.rev ?? '-';
-                    const cat = row?.category ?? row?.Category ?? '';
-                    const upd = row?.updatedAt || row?.updated_at || row?.lastAttachedAt || row?.lastattachedat || null;
-                    const updStr = upd ? new Date(upd).toLocaleString() : '-';
-                    return (
-                      <tr key={row.id || idx} className="odd:bg-gray-50">
-                        <td className="px-2 py-1">{idx + 1}</td>
-                        <td className="px-2 py-1">{String(dr)}</td>
-                        <td className="px-2 py-1">{String(rev)}</td>
-                        <td className="px-2 py-1">{String(cat)}</td>
-                        <td className="px-2 py-1">{updStr}</td>
-                      </tr>
-                    );
-                  })}
+                  {Array.isArray(prevRows) &&
+                    prevRows.map((row, idx) => {
+                      const dr = row?.drgNo ?? row?.drg_no ?? "-";
+                      const rev = row?.revision ?? row?.rev ?? "-";
+                      const cat = row?.category ?? row?.Category ?? "";
+                      const upd =
+                        row?.updatedAt ||
+                        row?.updated_at ||
+                        row?.lastAttachedAt ||
+                        row?.lastattachedat ||
+                        null;
+                      const updStr = upd ? new Date(upd).toLocaleString() : "-";
+                      return (
+                        <tr key={row.id || idx} className="odd:bg-gray-50">
+                          <td className="px-2 py-1">{idx + 1}</td>
+                          <td className="px-2 py-1">{String(dr)}</td>
+                          <td className="px-2 py-1">{String(rev)}</td>
+                          <td className="px-2 py-1">{String(cat)}</td>
+                          <td className="px-2 py-1">{updStr}</td>
+                        </tr>
+                      );
+                    })}
                 </tbody>
               </table>
             </div>
             <div className="flex justify-end mt-3">
-              <button onClick={() => setPrevOpen(false)} className="bg-gray-500 text-white px-3 py-1 text-sm rounded">Close</button>
+              <button
+                onClick={() => setPrevOpen(false)}
+                className="bg-gray-500 text-white px-3 py-1 text-sm rounded"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>
