@@ -157,8 +157,8 @@ model ProjectPackage {
   tasks         Json     @default("[]")
   notes         String?
   createdat     DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt     DateTime @updatedAt @db.Timestamptz(6)
-  drawingCount  Int
+  updatedAt     DateTime @updatedAt @default(now()) @db.Timestamptz(6)
+  drawingCount  Int      @default(0)
   bfadate       DateTime? @db.Date
   ifcdate       DateTime? @db.Date
   ifaversion    String?

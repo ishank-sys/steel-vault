@@ -1613,10 +1613,17 @@ async function ensureClient(c) {
 
 async function ensureUser(u, clientId = null) {
   const hashed = await bcrypt.hash(u.password, 10);
-  return prisma.user.upsert({
-    where: { email: u.email },
-    update: { name: u.name, userType: u.userType, clientId },
-    create: {
+  // `email` is not marked unique in the schema, so `upsert` by email will fail.
+  // Use findFirst + update/create to be compatible with the current schema.
+  const existing = await prisma.user.findFirst({ where: { email: u.email } });
+  if (existing) {
+    return prisma.user.update({
+      where: { id: existing.id },
+      data: { name: u.name, userType: u.userType, clientId },
+    });
+  }
+  return prisma.user.create({
+    data: {
       name: u.name,
       email: u.email,
       password: hashed,
@@ -1634,12 +1641,20 @@ async function upsertProject(p) {
   const tl = p.solTLName
     ? await prisma.user.findFirst({ where: { name: p.solTLName } })
     : null;
-  return prisma.project.upsert({
-    where: { projectNo: p.projectNo },
-    update: {},
-    create: {
+  // `projectNo` isn't unique in the schema, so avoid using `upsert` by that field.
+  const existing = await prisma.project.findFirst({ where: { projectNo: p.projectNo } });
+  if (existing) {
+    return prisma.project.update({
+      where: { id: existing.id },
+      data: {
+        // No updates needed for seed, but keeping structure for future changes
+      },
+    });
+  }
+  return prisma.project.create({
+    data: {
       projectNo: p.projectNo,
-      solProjectNo: p.projectNo, // using same value as external number; adjust if distinct internal numbering needed
+      solProjectNo: p.projectNo,
       name: p.name,
       clientId: client.id,
       solTLId: tl ? tl.id : null,
