@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma.js";
 import { getGCSStorage } from "@/lib/gcs";
 
-const prisma = new PrismaClient();
 const GCS_BUCKET = process.env.GCS_BUCKET;
 const SIGNED_URL_EXP_MIN = Number(process.env.SIGNED_URL_EXP_MIN || 15);
 

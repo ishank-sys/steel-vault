@@ -4,7 +4,6 @@ import { prisma } from "@/lib/prisma.js";
 import { getGCSStorage } from "@/lib/gcs";
 
 const GCS_BUCKET = process.env.GCS_BUCKET;
-const GCS_BUCKET = process.env.GCS_BUCKET;
 
 const slugify = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,80);
 
