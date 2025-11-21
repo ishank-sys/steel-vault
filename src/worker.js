@@ -64,7 +64,7 @@ async function processOneJob() {
   }
 }
 
-async function pollLoop() {
+export async function pollLoop() {
   while (true) {
     try {
       const res = await processOneJob();
@@ -86,4 +86,3 @@ if (process.argv[1] === __filename) {
   pollLoop();
 }
 
-export default { pollLoop };
