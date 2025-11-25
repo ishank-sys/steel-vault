@@ -142,82 +142,27 @@ export async function batchUpsertDrawings(entries = []) {
         whereParts.push(`superseded_by IS NULL`);
         const whereSql = whereParts.join(" AND ");
 
-        // Fetch any existing active row and lock it.
-        const existing = await tx.$queryRawUnsafe(
-          `SELECT id, "fileName", meta FROM "ProjectDrawing" WHERE ${whereSql} FOR UPDATE`,
+
+        // Fetch any existing active rows for this drgNo (could be multiple)
+        const existingRows = await tx.$queryRawUnsafe(
+          `SELECT id, revision FROM "ProjectDrawing" WHERE ${whereSql} FOR UPDATE`,
           ...params
         );
-        const prevRow =
-          Array.isArray(existing) && existing[0] ? existing[0] : null;
-        const prevId = prevRow ? Number(prevRow.id) : null;
+        const prevRows = Array.isArray(existingRows) ? existingRows : [];
 
-        // Determine whether incoming primary file matches existing active row
-        let prevMetaFileNames = [];
-        try {
-          if (
-            prevRow &&
-            prevRow.meta &&
-            typeof prevRow.meta === "object" &&
-            Array.isArray(prevRow.meta.fileNames)
-          ) {
-            prevMetaFileNames = prevRow.meta.fileNames.map(String);
-          }
-        } catch (parseErr) {
-          prevMetaFileNames = [];
-        }
-
-        if (
-          prevId &&
-          incomingPrimaryFile &&
-          (String(prevRow.fileName) === String(incomingPrimaryFile) ||
-            prevMetaFileNames.includes(String(incomingPrimaryFile)) ||
-            (Array.isArray(e.fileNames) &&
-              e.fileNames.some(
-                (fn) => String(fn) === String(prevRow.fileName)
-              )))
-        ) {
-          // Same file re-uploaded for existing active drawing -> update in-place
+        // Determine next revision by looking at max existing revision
+        let maxRev = null;
+        for (const r of prevRows) {
           try {
-            const newRevision =
-              e.revision && String(e.revision).trim() !== ""
-                ? String(e.revision).trim()
-                : nextRevision(prevRow.revision);
-
-            const updateData = {
-              revision: newRevision,
-              fileName: incomingPrimaryFile || prevRow.fileName || null,
-              issueDate: e.issueDate
-                ? new Date(String(e.issueDate))
-                : prevRow.issueDate || null,
-              meta: {
-                fileNames: e.fileNames || [],
-                issueDate: e.issueDate || null,
-              },
-              lastAttachedAt: new Date(),
-            };
-            if (categoryVal != null) updateData.category = categoryVal;
-
-            await tx.projectDrawing.update({
-              where: { id: prevId },
-              data: updateData,
-            });
-            continue; // moved on to next entry
-          } catch (updErr) {
-            console.warn(
-              "[projectDrawingsService] failed to update existing active drawing on re-upload:",
-              updErr?.message || updErr
-            );
-            throw updErr;
-          }
+            if (r && r.revision) {
+              const rev = String(r.revision).toUpperCase().replace(/[^A-Z]/g, '');
+              if (rev && (maxRev == null || rev.length > maxRev.length || (rev.length === maxRev.length && rev > maxRev))) {
+                maxRev = rev;
+              }
+            }
+          } catch (ignore) {}
         }
-
-        // If previous active row exists, mark temporarily non-active to allow insert
-        if (prevId) {
-          await tx.$executeRawUnsafe(
-            `UPDATE "ProjectDrawing" SET superseded_by = -1, "updatedAt" = NOW() WHERE id = $1`,
-            prevId
-          );
-        }
+        const newRevision = e.revision && String(e.revision).trim() !== '' ? String(e.revision).trim() : nextRevision(maxRev);
 
         // Build create data strictly from provided fields and parsed drgNo
         const createData = {
@@ -225,26 +170,17 @@ export async function batchUpsertDrawings(entries = []) {
           projectId: e.projectId,
           packageId: e.packageId,
           drgNo,
-          revision:
-            e.revision && String(e.revision).trim() !== ""
-              ? String(e.revision).trim()
-              : null,
+          revision: newRevision,
           issueDate: e.issueDate ? new Date(String(e.issueDate)) : null,
           fileName: incomingPrimaryFile || null,
           status: "IN_PROGRESS",
           meta: {
-            revision:
-              e.revision && String(e.revision).trim() !== ""
-                ? String(e.revision).trim()
-                : null,
+            revision: newRevision,
             fileNames: e.fileNames || [],
             issueDate: e.issueDate || null,
           },
           metadata: {
-            revision:
-              e.revision && String(e.revision).trim() !== ""
-                ? String(e.revision).trim()
-                : null,
+            revision: newRevision,
             fileNames: e.fileNames || [],
             issueDate: e.issueDate || null,
           },
@@ -268,20 +204,23 @@ export async function batchUpsertDrawings(entries = []) {
           // ignore logging errors
         }
 
-        const createdRow = await tx.projectDrawing.create({
-          data: createData,
-          select: { id: true },
-        });
-        const newId =
-          createdRow && createdRow.id ? Number(createdRow.id) : null;
+        const createdRow = await tx.projectDrawing.create({ data: createData, select: { id: true } });
+        const newId = createdRow && createdRow.id ? Number(createdRow.id) : null;
         if (newId) created++;
-        if (newId && prevId) {
-          await tx.$executeRawUnsafe(
-            `UPDATE "ProjectDrawing" SET superseded_by = $1, "updatedAt" = NOW() WHERE id = $2`,
-            newId,
-            prevId
-          );
-          superseded++;
+
+        // Mark all previous active rows as superseded and set status to VOID
+        if (newId && prevRows.length) {
+          const ids = prevRows.map((r) => Number(r.id)).filter(Boolean);
+          if (ids.length) {
+            // Use a parameterized UPDATE for all ids
+            const idParams = ids.map((_, i) => `$${i + 1}`).join(',');
+            await tx.$executeRawUnsafe(
+              `UPDATE "ProjectDrawing" SET superseded_by = $${ids.length + 1}, status = 'VOID', "updatedAt" = NOW() WHERE id IN (${idParams})`,
+              ...ids,
+              newId
+            );
+            superseded += ids.length;
+          }
         }
       } catch (err) {
         console.warn(

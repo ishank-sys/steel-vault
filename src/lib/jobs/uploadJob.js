@@ -1,6 +1,7 @@
 import { getGCSStorage } from '../gcs.js';
 import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
+import { batchUpsertDrawings } from './projectDrawingsJob.js';
 
 const GCS_BUCKET = process.env.GCS_BUCKET;
 
@@ -154,32 +155,22 @@ export async function handleUploadJob(job, prisma) {
         inferredCategory = 'EXTRA';
       }
 
-      await prisma.projectDrawing.upsert({
-        where: {
-          projectId_packageId_clientId_drgNo: {
-            projectId: BigInt(cleanProjectId),
-            packageId: BigInt(cleanPackageId || 0),
+      try {
+        await batchUpsertDrawings([
+          {
             clientId: cleanClientId,
+            projectId: BigInt(cleanProjectId),
+            packageId: cleanPackageId != null ? BigInt(cleanPackageId) : null,
             drgNo: drawingBase,
+            category: inferredCategory || '',
+            revision: null,
+            fileNames: [fileName],
+            issueDate: null,
           },
-        },
-        update: {
-          fileName,
-          filePath: objectPath,
-          lastAttachedAt: new Date(),
-          updatedAt: new Date(),
-        },
-        create: {
-          projectId: BigInt(cleanProjectId),
-          packageId: BigInt(cleanPackageId || 0),
-          clientId: cleanClientId,
-          drgNo: drawingBase,
-          fileName,
-          filePath: objectPath,
-          category: inferredCategory || '',
-          lastAttachedAt: new Date(),
-        },
-      });
+        ]);
+      } catch (err) {
+        console.warn('Failed to batchUpsertDrawings from uploadJob:', err?.message || err);
+      }
     } catch (fallbackErr) {
       console.warn('Failed to upsert ProjectDrawing:', fallbackErr);
       // Non-critical, continue
