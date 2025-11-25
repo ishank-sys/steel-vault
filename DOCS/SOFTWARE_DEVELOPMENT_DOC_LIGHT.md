@@ -12,6 +12,7 @@
   - Frontend: `Next.js` (app router), `React` 19, `Tailwind CSS` (v4)
   - Backend: `Node.js` (Next.js API routes), `NextAuth` for auth, server-side JS
   - DB / ORM: `PostgreSQL` via `Prisma` (schema present)
+  - DB Hosting: `Supabase` (Postgres) — `DATABASE_URL` in `.env` may point to a Supabase-hosted Postgres instance (see notes below)
   - Storage: Google Cloud Storage (primary; also AWS SDK is included for S3 interactions)
   - Email: SendGrid / Nodemailer
   - Hosting: Not specified in repo (common choices: Vercel, Netlify, self-hosted Node server)
@@ -152,6 +153,18 @@ Notes and quick repo sanity checks
 - Key API route folders observed: `projects`, `project-drawings`, `clients`, `users`, `files`, `gcs` (signed URLs), `upload`, `send-email`, `notify-submittal`.
 - Scripts: `dev`, `build`, `start`, `lint`, `seed` are defined in `package.json`.
 - No GitHub Actions workflows found in repository root (`.github/workflows` missing).
+
+Supabase (explicit)
+
+- The repository uses PostgreSQL via `Prisma` and the local `.env` contains a `DATABASE_URL` that points to a host under `*.supabase.co`, indicating the project's Postgres database is (or can be) hosted on Supabase.
+- Files that reference Supabase (comments or connection references):
+  - `.env` — contains `DATABASE_URL` pointing to a Supabase-hosted Postgres instance (keep credentials secret; do not commit to public repos).
+  - `src/app/api/upload-design-drawing/route.js` — comment: "Upsert into ProjectDrawing so filenames are visible in Supabase"
+  - `src/app/api/upload-extra-3d/route.js` — comment: "Upsert into ProjectDrawing so filenames show in Supabase"
+- Observations:
+  - There are no `supabase-js` client imports detected in the codebase; the app interacts with the DB through `Prisma` (server-side queries) and uses GCS for object storage.
+  - If you rely on Supabase Storage or Auth client features, consider adding the `@supabase/supabase-js` client and documenting `SUPABASE_URL` / `SUPABASE_ANON_KEY` in an `.env.example`.
+
 
 Recommended next steps (low-effort):
 
