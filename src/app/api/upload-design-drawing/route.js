@@ -149,9 +149,19 @@ export async function POST(req) {
         } catch (fallbackErr) {
           console.warn('[upload-design-drawing] call to /api/project-drawings failed:', fallbackErr?.message || fallbackErr);
         }
+        function serializeForJson(value) {
+          if (typeof value === 'bigint') return value.toString();
+          if (Array.isArray(value)) return value.map(serializeForJson);
+          if (value && typeof value === 'object') {
+            const out = {};
+            for (const k of Object.keys(value)) out[k] = serializeForJson(value[k]);
+            return out;
+          }
+          return value;
+        }
         return NextResponse.json({
           message: alreadyExists ? 'File replaced/navigated' : 'Uploaded',
-          record: typeof created !== 'undefined' ? created : { storagePath: objectPath },
+          record: typeof created !== 'undefined' ? serializeForJson(created) : { storagePath: objectPath },
         });
       } catch (logErr) {
         console.error('Failed to log document upload:', logErr.message || logErr);

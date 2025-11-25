@@ -52,7 +52,19 @@ export async function GET(req) {
       orderBy: { uploadedAt: 'desc' },
     });
 
-    return NextResponse.json(documentLogs);
+    // Serialize BigInt values (Prisma may return BigInt for BigInt columns)
+    function serializeForJson(value) {
+      if (typeof value === 'bigint') return value.toString();
+      if (Array.isArray(value)) return value.map(serializeForJson);
+      if (value && typeof value === 'object') {
+        const out = {};
+        for (const k of Object.keys(value)) out[k] = serializeForJson(value[k]);
+        return out;
+      }
+      return value;
+    }
+
+    return NextResponse.json(documentLogs.map(serializeForJson));
   } catch (err) {
     console.error('Failed to fetch document logs:', err);
     return NextResponse.json({ error: 'Failed to fetch document logs' }, { status: 500 });
