@@ -46,7 +46,7 @@ export async function handleUploadJob(job, prisma) {
     throw new Error(`Client with id ${cleanClientId} not found`);
   }
 
-  const project = await prisma.project.findUnique({ where: { id: BigInt(cleanProjectId) } });
+  const project = await prisma.project.findUnique({ where: { id: Number(cleanProjectId) } });
   if (!project) {
     throw new Error(`Project with id ${cleanProjectId} not found`);
   }
@@ -159,8 +159,8 @@ export async function handleUploadJob(job, prisma) {
         await batchUpsertDrawings([
           {
             clientId: cleanClientId,
-            projectId: BigInt(cleanProjectId),
-            packageId: cleanPackageId != null ? BigInt(cleanPackageId) : null,
+            projectId: Number(cleanProjectId),
+            packageId: cleanPackageId != null ? Number(cleanPackageId) : null,
             drgNo: drawingBase,
             category: inferredCategory || '',
             revision: null,
