@@ -295,7 +295,7 @@ const PublishDrawing = () => {
     return () => {
       cancelled = true;
     };
-  }, [selectedProjectId, selectedPackageId, drawings]);
+  }, [selectedProjectId, selectedPackageId]);
 
   const [selectedRows, setSelectedRows] = useState(new Set()); // drawings table
   const [selectedAttachmentRows, setSelectedAttachmentRows] = useState(
@@ -1581,32 +1581,37 @@ const PublishDrawing = () => {
                 const revMessage = isDrawing
                   ? revisionConflicts.get(file?.id) || ""
                   : "";
-                // Resolve prev revision: prefer filename-based match; fallback to drawing+category
+                // Resolve prev revision strictly for this package:
+                // - If there are no prevRows for the current project+package,
+                //   do NOT show any previous revision (stay "NA").
+                // - Otherwise, prefer filename-based match; fallback to drawing+category.
                 let prevRev = "";
-                const firstPdfName =
-                  Array.isArray(file?.attachedPdfs) &&
-                  file.attachedPdfs.length > 0
-                    ? file.attachedPdfs[0]?.name
-                    : null;
-                if (firstPdfName) {
-                  const fnameKey = `file::${String(firstPdfName)
-                    .trim()
-                    .toLowerCase()}`;
-                  prevRev = prevRevMap[fnameKey] ?? "";
-                }
-                if (!prevRev) {
-                  const dr = isDrawing
-                    ? file?.drgNo ?? file?.drawingNo ?? "-"
-                    : "-";
-                  const catKeyRaw = file?.category ?? "";
-                  const { normDr, normCat } = normalizeDrawingKey(
-                    dr,
-                    catKeyRaw
-                  );
-                  prevRev =
-                    prevRevMap[`${normDr}::${normCat}`] ??
-                    prevRevMap[normDr] ??
-                    "";
+                const hasAnyPrevRows =
+                  Array.isArray(prevRows) && prevRows.length > 0;
+                if (isDrawing && hasAnyPrevRows) {
+                  const firstPdfName =
+                    Array.isArray(file?.attachedPdfs) &&
+                    file.attachedPdfs.length > 0
+                      ? file.attachedPdfs[0]?.name
+                      : null;
+                  if (firstPdfName) {
+                    const fnameKey = `file::${String(firstPdfName)
+                      .trim()
+                      .toLowerCase()}`;
+                    prevRev = prevRevMap[fnameKey] ?? "";
+                  }
+                  if (!prevRev) {
+                    const dr = file?.drgNo ?? file?.drawingNo ?? "-";
+                    const catKeyRaw = file?.category ?? "";
+                    const { normDr, normCat } = normalizeDrawingKey(
+                      dr,
+                      catKeyRaw
+                    );
+                    prevRev =
+                      prevRevMap[`${normDr}::${normCat}`] ??
+                      prevRevMap[normDr] ??
+                      "";
+                  }
                 }
 
                 return (
@@ -1769,6 +1774,7 @@ const PublishDrawing = () => {
       prevRevMap,
       prevRevLoading,
       revisionConflicts,
+      prevRows,
     ]
   );
 
