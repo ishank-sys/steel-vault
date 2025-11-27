@@ -117,37 +117,7 @@ export default function Sidebar({ initialUserType = null }) {
       {canShow('Admin') && (
         <CollapsibleGroup label="Admin" defaultOpen={defaultOpenFor('Admin')}>
           <SidebarItem label="Admin Upload" href="/dashboard/admin/admin_upload" />
-          <CollapsibleGroup label="User">
-            <SidebarItem label="New User" href="/dashboard/admin/user/new_user" />
-            <SidebarItem label="View User" href="/dashboard/admin/user/view_user" />
-            <SidebarItem
-              label="View Ex-User"
-              href="/dashboard/admin/user/view_ex_user"
-            />
-            <SidebarItem
-              label="View Client Users"
-              href="/dashboard/admin/user/view_client_user"
-            />
-          </CollapsibleGroup>
-
-          <CollapsibleGroup label="Roles">
-            <SidebarItem label="New Role" href="/dashboard/admin/roles/new_role" />
-            <SidebarItem
-              label="View Role"
-              href="/dashboard/admin/roles/view_role"
-            />
-          </CollapsibleGroup>
-
-          <CollapsibleGroup label="Prospect">
-            <SidebarItem
-              label="Create Client"
-              href="/dashboard/clients/create_client"
-            />
-            <SidebarItem
-              label="View Client"
-              href="/dashboard/clients/view_client"
-            />
-          </CollapsibleGroup>
+          <SidebarItem label="Creation" href="/dashboard/admin/creation" />
         </CollapsibleGroup>
       )}
 
