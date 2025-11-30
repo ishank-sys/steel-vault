@@ -1152,47 +1152,64 @@ const TransmittalForm = () => {
         }
       }
 
-      // Enqueue server-side generate-zip with uploaded object paths; worker will produce final ZIP and log it
-      const genResp = await fetch("/api/jobs/enqueue", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: "generate-zip",
-          payload: {
-            clientId: Number(clientId),
-            projectId: Number(projectIdToSend),
-            objectPaths: uploadedObjectPaths,
-            zipName: zipName,
+      // Enqueue server-side generate-zip only when we have uploaded object paths.
+      // If there are none (no attachments), skip enqueueing and surface a successful result.
+      if (!Array.isArray(uploadedObjectPaths) || uploadedObjectPaths.length === 0) {
+        console.warn(
+          "No uploaded object paths found; skipping generate-zip enqueue."
+        );
+        setPublishResult({
+          success: true,
+          data: null,
+          summary: {
+            name: zipName || "No attachments",
+            projectId: projectIdToSend,
           },
-        }),
-      });
-      if (!genResp.ok) throw new Error("Failed to enqueue generate-zip");
-      const { jobId: genJobId } = await genResp.json();
-      // Poll for generate-zip completion and show result (awaited)
-      let jobResult = null;
-      for (;;) {
-        const s = await fetch(`/api/jobs/${genJobId}`);
-        if (!s.ok) throw new Error("Job status fetch failed");
-        const js = await s.json();
-        const job = js && js.job ? js.job : js;
-        if (!job) throw new Error("No job");
-        if (job.status === "succeeded") {
-          jobResult = job.result;
-          break;
+        });
+        setShowPublishModal(true);
+      } else {
+        // Enqueue server-side generate-zip with uploaded object paths; worker will produce final ZIP and log it
+        const genResp = await fetch("/api/jobs/enqueue", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: "generate-zip",
+            payload: {
+              clientId: Number(clientId),
+              projectId: Number(projectIdToSend),
+              objectPaths: uploadedObjectPaths,
+              zipName: zipName,
+            },
+          }),
+        });
+        if (!genResp.ok) throw new Error("Failed to enqueue generate-zip");
+        const { jobId: genJobId } = await genResp.json();
+        // Poll for generate-zip completion and show result (awaited)
+        let jobResult = null;
+        for (;;) {
+          const s = await fetch(`/api/jobs/${genJobId}`);
+          if (!s.ok) throw new Error("Job status fetch failed");
+          const js = await s.json();
+          const job = js && js.job ? js.job : js;
+          if (!job) throw new Error("No job");
+          if (job.status === "succeeded") {
+            jobResult = job.result;
+            break;
+          }
+          if (job.status === "failed")
+            throw new Error(job.error || "generate-zip failed");
+          await new Promise((r) => setTimeout(r, 1500));
         }
-        if (job.status === "failed")
-          throw new Error(job.error || "generate-zip failed");
-        await new Promise((r) => setTimeout(r, 1500));
+        setPublishResult({
+          success: true,
+          data: jobResult,
+          summary: {
+            name: jobResult?.fileName || zipName,
+            projectId: projectIdToSend,
+          },
+        });
+        setShowPublishModal(true);
       }
-      setPublishResult({
-        success: true,
-        data: jobResult,
-        summary: {
-          name: jobResult?.fileName || zipName,
-          projectId: projectIdToSend,
-        },
-      });
-      setShowPublishModal(true);
 
       // Optional email notification
       const recipients = String(toEmails || "").trim();

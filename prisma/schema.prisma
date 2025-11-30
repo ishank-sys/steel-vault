@@ -120,7 +120,7 @@ model ProjectDrawing {
   id                      BigInt    @id @default(autoincrement())
   clientId                Int
   projectId               BigInt
-  packageId               BigInt
+  packageId               BigInt?
   drgNo                   String
   title                   String?
   revision                String?
@@ -154,6 +154,7 @@ model ProjectDrawing {
 
   client  Client? @relation(fields: [clientId], references: [id])
   project Project @relation(fields: [projectId], references: [id])
+  package ProjectPackage? @relation(fields: [packageId], references: [id])
 }
 
 model ProjectPackage {
@@ -173,6 +174,7 @@ model ProjectPackage {
   ifcdate       DateTime? @db.Date
   ifaversion    String?
   ifcversion    String?
+  projectDrawings ProjectDrawing[]
 }
 
 model ProjectRFI {

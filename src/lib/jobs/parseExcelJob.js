@@ -22,8 +22,34 @@ export async function handleParseExcel(job, prisma) {
   );
   const drgNoIndex = header.findIndex((col) => col.includes("dr no"));
   const itemIndex = header.findIndex((col) => col.includes("description"));
-  const revIndex = header.findIndex((col) => col.includes("rev"));
-  const statusIndex = header.findIndex((col) => col.includes("rev remarks"));
+  // Robust revision column detection. Accepts 'rev', 'revision' in any case,
+  // but purposely avoids columns that contain 'remark' (e.g. 'rev remarks').
+  const revCandidates = ["rev", "revision"];
+  let revIndex = -1;
+  for (let i = 0; i < header.length; i++) {
+    const col = header[i] || "";
+    if (!col) continue;
+    if (col.includes("remark")) continue; // skip remark columns
+    for (const cand of revCandidates) {
+      const re = new RegExp(`(^|[^a-zA-Z])${cand}([^a-zA-Z]|$)`);
+      if (re.test(col)) {
+        revIndex = i;
+        break;
+      }
+    }
+    if (revIndex !== -1) break;
+  }
+  if (revIndex === -1) {
+    for (const cand of revCandidates) {
+      const idx = header.findIndex((h) => h === cand);
+      if (idx !== -1) {
+        revIndex = idx;
+        break;
+      }
+    }
+  }
+  // statusIndex looks for columns that contain 'remarks' (including 'rev remarks')
+  const statusIndex = header.findIndex((col) => col.includes("remarks") || col.includes("remark") || col.includes("rev remarks"));
   const modelerIndex = header.findIndex((col) => col.includes("mod by"));
   const detailerIndex = header.findIndex((col) => col.includes("dr by"));
   const checkerIndex = header.findIndex((col) => col.includes("ch by"));
