@@ -122,7 +122,6 @@ export async function batchUpsertDrawings(entries = []) {
         whereParts.push(`superseded_by IS NULL`);
         const whereSql = whereParts.join(" AND ");
 
-
         // Fetch any existing active rows for this drgNo (could be multiple)
         const existingRows = await tx.$queryRawUnsafe(
           `SELECT id, revision FROM "ProjectDrawing" WHERE ${whereSql} FOR UPDATE`,
@@ -135,18 +134,39 @@ export async function batchUpsertDrawings(entries = []) {
         for (const r of prevRows) {
           try {
             if (r && r.revision) {
-              const rev = String(r.revision).toUpperCase().replace(/[^A-Z]/g, '');
-              if (rev && (maxRev == null || rev.length > maxRev.length || (rev.length === maxRev.length && rev > maxRev))) {
+              const rev = String(r.revision)
+                .toUpperCase()
+                .replace(/[^A-Z]/g, "");
+              if (
+                rev &&
+                (maxRev == null ||
+                  rev.length > maxRev.length ||
+                  (rev.length === maxRev.length && rev > maxRev))
+              ) {
                 maxRev = rev;
               }
             }
           } catch (ignore) {}
         }
         // Require incoming revision from the Excel import. Skip entry if missing.
-        const providedRevision = e.revision && String(e.revision).trim() !== '' ? String(e.revision).trim() : null;
+        const providedRevision =
+          e.revision && String(e.revision).trim() !== ""
+            ? String(e.revision).trim()
+            : null;
         if (!providedRevision) {
           try {
-            console.warn('[projectDrawingsService] skipping drawing entry missing revision ->', { entry: { clientId: e.clientId, projectId: e.projectId, packageId: e.packageId, drgNo, incomingPrimaryFile } });
+            console.warn(
+              "[projectDrawingsService] skipping drawing entry missing revision ->",
+              {
+                entry: {
+                  clientId: e.clientId,
+                  projectId: e.projectId,
+                  packageId: e.packageId,
+                  drgNo,
+                  incomingPrimaryFile,
+                },
+              }
+            );
           } catch (logErr) {}
           continue;
         }
@@ -193,8 +213,12 @@ export async function batchUpsertDrawings(entries = []) {
           // ignore logging errors
         }
 
-        const createdRow = await tx.projectDrawing.create({ data: createData, select: { id: true } });
-        const newId = createdRow && createdRow.id ? Number(createdRow.id) : null;
+        const createdRow = await tx.projectDrawing.create({
+          data: createData,
+          select: { id: true },
+        });
+        const newId =
+          createdRow && createdRow.id ? Number(createdRow.id) : null;
         if (newId) created++;
 
         // Mark all previous active rows as superseded and set status to VOID
@@ -202,9 +226,11 @@ export async function batchUpsertDrawings(entries = []) {
           const ids = prevRows.map((r) => Number(r.id)).filter(Boolean);
           if (ids.length) {
             // Use a parameterized UPDATE for all ids
-            const idParams = ids.map((_, i) => `$${i + 1}`).join(',');
+            const idParams = ids.map((_, i) => `$${i + 1}`).join(",");
             await tx.$executeRawUnsafe(
-              `UPDATE "ProjectDrawing" SET superseded_by = $${ids.length + 1}, status = 'VOID', "updatedAt" = NOW() WHERE id IN (${idParams})`,
+              `UPDATE "ProjectDrawing" SET superseded_by = $${
+                ids.length + 1
+              }, status = 'VOID', "updatedAt" = NOW() WHERE id IN (${idParams})`,
               ...ids,
               newId
             );
@@ -225,6 +251,7 @@ export async function batchUpsertDrawings(entries = []) {
 }
 
 export async function handlePublishJob(job, prisma) {
+  console.log("[projectDrawingsJob] handlePublishJob called for job:", job);
   const payload = job.payload || {};
   const entries = Array.isArray(payload.drawings)
     ? payload.drawings.map((d) => ({
@@ -234,7 +261,14 @@ export async function handlePublishJob(job, prisma) {
         // allow drgNo to be provided; batchUpsertDrawings will prefer this value
         drgNo: d.drgNo || d.drawingNo || d.drawing || null,
         category: d.category || d.cat || "",
-        revision: d.revision || d.rev || null,
+        // Accept REV from Excel in various casings/column names
+        revision:
+          (d.revision && String(d.revision).trim()) ||
+          (d.rev && String(d.rev).trim()) ||
+          (d.REV && String(d.REV).trim()) ||
+          (d.Rev && String(d.Rev).trim()) ||
+          (d.rEv && String(d.rEv).trim()) ||
+          null,
         fileNames: d.fileNames || (d.fileName ? [d.fileName] : []),
         issueDate: d.issueDate || null,
       }))

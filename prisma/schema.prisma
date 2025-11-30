@@ -8,31 +8,31 @@ datasource db {
 }
 
 model Client {
-  id               Int           @id @default(autoincrement())
-  name             String
-  companyName      String
-  email            String?       @unique
-  contactNo        String?
-  address          String?
-  dbUrl            String?       @map("DB_URL")
-  configuration    Json          @default("{}")
-  ccListData       Json          @default("[]")
-  folderStructure  Json          @default("{}")
-  totalProjects    Int           @default(0)
-  activeProjects   Int           @default(0)
-  completedProjects Int          @default(0)
-  totalProjectValue Decimal?     @db.Decimal(15,2)
-  totalWeightage   Decimal?      @db.Decimal(10,2)
-  lastActivityDate DateTime?
-  attachments      Json?
-  notes            String?
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
-  documentLogs     DocumentLog[]
-  projects         Project[]     @relation("ClientProjects")
-  users            User[]        @relation("ClientUsers")
-  projectDrawings  ProjectDrawing[]
-  uploads          Upload[]
+  id                Int              @id @default(autoincrement())
+  name              String
+  companyName       String
+  email             String?          @unique
+  contactNo         String?
+  address           String?
+  dbUrl             String?          @map("DB_URL")
+  configuration     Json             @default("{}")
+  ccListData        Json             @default("[]")
+  folderStructure   Json             @default("{}")
+  totalProjects     Int              @default(0)
+  activeProjects    Int              @default(0)
+  completedProjects Int              @default(0)
+  totalProjectValue Decimal?         @db.Decimal(15, 2)
+  totalWeightage    Decimal?         @db.Decimal(10, 2)
+  lastActivityDate  DateTime?
+  attachments       Json?
+  notes             String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  documentLogs      DocumentLog[]
+  projects          Project[]        @relation("ClientProjects")
+  users             User[]           @relation("ClientUsers")
+  projectDrawings   ProjectDrawing[]
+  uploads           Upload[]
 }
 
 model User {
@@ -53,16 +53,16 @@ model User {
 }
 
 model Project {
-  id                 BigInt    @id @default(autoincrement())
-  projectNo          String    @map("ClientprojectNo")
+  id                 BigInt           @id @default(autoincrement())
+  projectNo          String           @map("ClientprojectNo")
   solProjectNo       String
   name               String
   description        String?
   clientId           Int
-  solTLId            Int?      // Team Lead assignment
-  status             String    @default("PLANNING")
-  priority           String    @default("MEDIUM")
-  progress           Decimal   @default(0.0) @db.Decimal(5,2)
+  solTLId            Int? // Team Lead assignment
+  status             String           @default("PLANNING")
+  priority           String           @default("MEDIUM")
+  progress           Decimal          @default(0.0) @db.Decimal(5, 2)
   branch             String?
   startDate          DateTime?
   endDate            DateTime?
@@ -79,32 +79,31 @@ model Project {
   projectSubType     String?
   projectDataFolder  String?
   jobName            String?
-  estimationRows     Json      @default("[]")
-  lastUpdated        DateTime  @updatedAt @default(now())
+  estimationRows     Json             @default("[]")
+  lastUpdated        DateTime         @default(now()) @updatedAt
   lastActivityDate   DateTime?
-  createdAt          DateTime  @default(now())
+  createdAt          DateTime         @default(now())
   documentLogs       DocumentLog[]
   projectDrawings    ProjectDrawing[]
-  client             Client    @relation("ClientProjects", fields: [clientId], references: [id])
-  solTL              User?     @relation("UserSolTL", fields: [solTLId], references: [id])
+  client             Client           @relation("ClientProjects", fields: [clientId], references: [id])
+  solTL              User?            @relation("UserSolTL", fields: [solTLId], references: [id])
   clientPm           Int?
 }
 
 model DocumentLog {
-  id           Int      @id @default(autoincrement())
-  fileName     String
-  clientId     Int
-  projectId    BigInt
-  storagePath  String
-  size         Int
-  uploadedAt   DateTime @default(now())
-  logType      String?
-  submittal    String?
-  client       Client   @relation(fields: [clientId], references: [id])
-  project      Project  @relation(fields: [projectId], references: [id])
+  id          Int      @id @default(autoincrement())
+  fileName    String
+  clientId    Int
+  projectId   BigInt
+  storagePath String
+  size        Int
+  uploadedAt  DateTime @default(now())
+  logType     String?
+  submittal   String?
+  client      Client   @relation(fields: [clientId], references: [id])
+  project     Project  @relation(fields: [projectId], references: [id])
 }
 
-// Optional uploads table for misc file upload logging
 model Upload {
   id          Int      @id @default(autoincrement())
   clientId    Int
@@ -118,58 +117,58 @@ model Upload {
 }
 
 model ProjectDrawing {
-  id             BigInt    @id @default(autoincrement())
-  clientId       Int
-  projectId      BigInt
-  packageId      BigInt
-  drgNo          String
-  title          String?
-  revision       String?
-  issueDate      DateTime? @db.Date
+  id                      BigInt    @id @default(autoincrement())
+  clientId                Int
+  projectId               BigInt
+  packageId               BigInt
+  drgNo                   String
+  title                   String?
+  revision                String?
+  issueDate               DateTime? @db.Date
+  prevRev                 String?
   // "VOID", "SUSPENDED", "ISSUED", "APPROVAL", "APPROVED", "IN_PROGRESS"
-  status         String?
-  filePath       String?
-  metadata       Json?
-  createdAt      DateTime  @default(now()) @db.Timestamptz(6)
-  updatedAt      DateTime  @updatedAt @db.Timestamptz(6)
-  category       String?
-  item           String?
-  fileName       String?
-  lastAttachedAt DateTime?
-  meta           Json?
-  clientRowId    String?
-  serial_no      Int?
-  description    String?
-  assy_qty       Int?
-  finish         String?
-  date_sent_for_approval DateTime? @db.Date
+  status                  String?
+  filePath                String?
+  metadata                Json?
+  createdAt               DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt               DateTime  @updatedAt @db.Timestamptz(6)
+  category                String?
+  item                    String?
+  fileName                String?
+  lastAttachedAt          DateTime?
+  meta                    Json?
+  clientRowId             String?
+  serial_no               Int?
+  description             String?
+  assy_qty                Int?
+  finish                  String?
+  date_sent_for_approval  DateTime? @db.Date
   date_sent_for_fab_field DateTime? @db.Date
-  remark         String?
-  mod            String?
-  det            String?
-  chk            String?
-  sheet_size     String?
-  rev_remark     String?
-  superseded_by  BigInt?
+  remark                  String?
+  mod                     String?
+  det                     String?
+  chk                     String?
+  sheet_size              String?
+  rev_remark              String?
+  superseded_by           BigInt?
 
-  client         Client?   @relation(fields: [clientId], references: [id])
-  project        Project   @relation(fields: [projectId], references: [id])
-
+  client  Client? @relation(fields: [clientId], references: [id])
+  project Project @relation(fields: [projectId], references: [id])
 }
 
 model ProjectPackage {
-  id            BigInt   @id @default(autoincrement())
+  id            BigInt    @id @default(autoincrement())
   projectid     BigInt
   name          String
   packagenumber String?
   tentativedate DateTime? @db.Date
   ifadate       DateTime? @db.Date
   status        String?
-  tasks         Json     @default("[]")
+  tasks         Json      @default("[]")
   notes         String?
-  createdat     DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt     DateTime @updatedAt @default(now()) @db.Timestamptz(6)
-  drawingCount  Int      @default(0)
+  createdat     DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  drawingCount  Int       @default(0)
   bfadate       DateTime? @db.Date
   ifcdate       DateTime? @db.Date
   ifaversion    String?
@@ -177,22 +176,22 @@ model ProjectPackage {
 }
 
 model ProjectRFI {
-  id        BigInt   @id @default(autoincrement())
-  projectid BigInt
-  rfinumber String?
-  date      DateTime? @db.Date
-  status    String?
-  remark    String?
-  answer    String?
+  id           BigInt    @id @default(autoincrement())
+  projectid    BigInt
+  rfinumber    String?
+  date         DateTime? @db.Date
+  status       String?
+  remark       String?
+  answer       String?
   answereddate DateTime? @db.Date
-  attachments Json?
-  createdat DateTime @default(now()) @db.Timestamptz(6)
-  updatedat DateTime @updatedAt @db.Timestamptz(6)
+  attachments  Json?
+  createdat    DateTime  @default(now()) @db.Timestamptz(6)
+  updatedat    DateTime  @updatedAt @db.Timestamptz(6)
 }
 
 model Job {
   id          Int      @id @default(autoincrement())
-  type        String   // parse-excel | validate-conflicts | publish-job | generate-zip
+  type        String // parse-excel | validate-conflicts | publish-job | generate-zip
   status      String   @default("queued") // queued | running | succeeded | failed
   payload     Json
   result      Json?
