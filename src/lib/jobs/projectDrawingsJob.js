@@ -44,30 +44,10 @@ export async function batchUpsertDrawings(entries = []) {
     let created = 0;
     let superseded = 0;
 
-    // helper: increment revision string A..Z, AA, AB...
-    function nextRevision(cur) {
-      try {
-        const s = String(cur || "")
-          .toUpperCase()
-          .replace(/[^A-Z]/g, "");
-        if (!s) return "A";
-        const chars = s.split("");
-        let i = chars.length - 1;
-        while (i >= 0) {
-          if (chars[i] === "Z") {
-            chars[i] = "A";
-            i -= 1;
-          } else {
-            chars[i] = String.fromCharCode(chars[i].charCodeAt(0) + 1);
-            return chars.join("");
-          }
-        }
-        // all rolled over, prepend A
-        return "A" + chars.join("");
-      } catch (e) {
-        return "A";
-      }
-    }
+    // NOTE: Revision must be provided by the import source (excel sheet).
+    // We no longer auto-calculate revisions here. If an incoming entry
+    // does not include a non-empty `revision` we will skip it so upstream
+    // data must provide the value.
 
     for (const e of entries) {
       try {
@@ -150,7 +130,7 @@ export async function batchUpsertDrawings(entries = []) {
         );
         const prevRows = Array.isArray(existingRows) ? existingRows : [];
 
-        // Determine next revision by looking at max existing revision
+        // Determine max existing revision (to set prevRev) but do NOT auto-generate
         let maxRev = null;
         for (const r of prevRows) {
           try {
@@ -162,7 +142,15 @@ export async function batchUpsertDrawings(entries = []) {
             }
           } catch (ignore) {}
         }
-        const newRevision = e.revision && String(e.revision).trim() !== '' ? String(e.revision).trim() : nextRevision(maxRev);
+        // Require incoming revision from the Excel import. Skip entry if missing.
+        const providedRevision = e.revision && String(e.revision).trim() !== '' ? String(e.revision).trim() : null;
+        if (!providedRevision) {
+          try {
+            console.warn('[projectDrawingsService] skipping drawing entry missing revision ->', { entry: { clientId: e.clientId, projectId: e.projectId, packageId: e.packageId, drgNo, incomingPrimaryFile } });
+          } catch (logErr) {}
+          continue;
+        }
+        const newRevision = providedRevision;
 
         // Build create data strictly from provided fields and parsed drgNo
         const createData = {
@@ -171,6 +159,7 @@ export async function batchUpsertDrawings(entries = []) {
           packageId: e.packageId,
           drgNo,
           revision: newRevision,
+          prevRev: maxRev,
           issueDate: e.issueDate ? new Date(String(e.issueDate)) : null,
           fileName: incomingPrimaryFile || null,
           status: "IN_PROGRESS",
