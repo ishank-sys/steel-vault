@@ -49,7 +49,12 @@ export async function handleParseExcel(job, prisma) {
     }
   }
   // statusIndex looks for columns that contain 'remarks' (including 'rev remarks')
-  const statusIndex = header.findIndex((col) => col.includes("remarks") || col.includes("remark") || col.includes("rev remarks"));
+  const statusIndex = header.findIndex(
+    (col) =>
+      col.includes("remarks") ||
+      col.includes("remark") ||
+      col.includes("rev remarks")
+  );
   const modelerIndex = header.findIndex((col) => col.includes("mod by"));
   const detailerIndex = header.findIndex((col) => col.includes("dr by"));
   const checkerIndex = header.findIndex((col) => col.includes("ch by"));
@@ -76,5 +81,10 @@ export async function handleParseExcel(job, prisma) {
     conflict: "--- No approval sent before",
     attachConflict: "",
   }));
+
+  console.log(
+    `[handleParseExcel] Parsed ${parsed.length} rows from Excel file for job ${job.id}: `,
+    parsed.slice(0, 5)
+  );
   return { rows: parsed };
 }

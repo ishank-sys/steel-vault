@@ -237,7 +237,7 @@ const TransmittalForm = () => {
       sheetSize: d.sheetSize || (i === 3 || i === 4 ? "18x24" : "11x17"),
       itemQty: i === 0 || i === 2 ? "2" : i === 1 ? "1" : "1", // Default to 1
       attachedPdfs: d.attachedPdfs || [],
-      category: d.category || "", // For ZIP folder
+      category: typeof d.category === 'string' ? d.category.trim() : (d.category || ""), // For ZIP folder - properly trim Excel category
     };
   });
 
@@ -771,7 +771,9 @@ const TransmittalForm = () => {
       let entriesToUpsert = (tableDrawings || [])
         .map((d) => ({
           drgNo: d.drgNo || "",
-          category: normalizeCategory(d.category || ""),
+          // Preserve the raw category parsed from Excel (trimmed). Do not normalize here
+          // so that the exact value from the sheet (e.g. "M" or "G") is preserved.
+          category: typeof d.category === "string" ? d.category.trim() : d.category ?? "",
           revision: d.rev || null,
           fileNames: (d.attachedPdfs || [])
             .map((f) => f?.name || f?.file?.name || "")
@@ -987,12 +989,17 @@ const TransmittalForm = () => {
       const entriesToUpsert = (tableDrawings || [])
         .map((d) => {
           const drgNo = d.drawingNo || d.drgNo || d.drawingNo || "";
-          const category = normalizeCategory(d.category || "");
-          const { normDr } = normalizeDrawingKey(drgNo, category);
+          // Keep raw category from Excel (trimmed) so it's preserved in DB
+          const rawCategory = typeof d.category === "string" ? d.category.trim() : (d.category ?? "");
+          // Debug logging for category flow
+          console.log(`[TransmittalForm] Processing drawing ${drgNo}: original category = ${JSON.stringify(d.category)}, rawCategory = ${JSON.stringify(rawCategory)}`);
+          // Use normalized values only for internal matching; do not overwrite payload category
+          const categoryForMatch = normalizeCategory(rawCategory || "");
+          const { normDr } = normalizeDrawingKey(drgNo, categoryForMatch);
           const drawingToSend = drgNo; // keep original; DB will upsert on (project, drawing, category)
           return {
             drgNo: drawingToSend,
-            category,
+            category: rawCategory,
             revision: d.rev || null,
             fileNames: (d.attachedPdfs || [])
               .map((f) => f.name || f.file?.name || "")

@@ -709,18 +709,25 @@ export async function handlePublishJob(job, prisma) {
     return { created: 0, superseded: 0 };
   }
 
-  const entries = payload.drawings.map((d) => ({
-    clientId: payload.clientId || d.clientId,
-    projectId: payload.projectId || d.projectId,
-    packageId: payload.packageId || d.packageId || d.package || null,
-    drgNo: d.drgNo || d.drawingNo || d.drawing || null,
-    // Strictly respect category from Excel data - don't infer or override
-    category: d.category || d.cat || null,
-    // Strictly respect revision from Excel data - don't extract from filename
-    revision: d.revision || d.rev || d.REV || d.Rev || null,
-    fileNames: d.fileNames || (d.fileName ? [d.fileName] : []),
-    issueDate: d.issueDate || null,
-  }));
+  const entries = payload.drawings.map((d) => {
+    const entry = {
+      clientId: payload.clientId || d.clientId,
+      projectId: payload.projectId || d.projectId,
+      packageId: payload.packageId || d.packageId || d.package || null,
+      drgNo: d.drgNo || d.drawingNo || d.drawing || null,
+      // Strictly respect category from Excel data - don't infer or override
+      category: d.category || d.cat || null,
+      // Strictly respect revision from Excel data - don't extract from filename
+      revision: d.revision || d.rev || d.REV || d.Rev || null,
+      fileNames: d.fileNames || (d.fileName ? [d.fileName] : []),
+      issueDate: d.issueDate || null,
+    };
+    
+    // Debug logging for category flow
+    console.log(`[projectDrawingsJob] Processing drawing ${entry.drgNo}: original d.category = ${JSON.stringify(d.category)}, final category = ${JSON.stringify(entry.category)}`);
+    
+    return entry;
+  });
 
   if (!entries.length) {
     console.warn("[projectDrawingsJob] No valid entries to process");

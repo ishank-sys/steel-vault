@@ -180,6 +180,7 @@ const handleNextClick = () => {
         detailer: d.detailer || '-',
         checker: d.checker || '-',
         attachedPdfs: d.attachedPdfs || [],
+        category: d.category || '', // Preserve category from Excel data
       };
     });
 
