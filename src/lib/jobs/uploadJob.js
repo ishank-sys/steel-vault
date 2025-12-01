@@ -139,43 +139,8 @@ export async function handleUploadJob(job, prisma) {
     throw new Error(`Failed to log upload: ${e.message}`);
   }
 
-  // Also upsert into ProjectDrawing for design drawings
-  if (subFolder === 'design-drawings' || fileType === 'Design Drawing') {
-    try {
-      const drawingBaseRaw = String(fileName).replace(/\.[^\/\.]+$/, '').trim() || String(fileName);
-      const drawingBase = (String(drawingBaseRaw).split('-')[0] || drawingBaseRaw).trim();
-      
-      // Infer category from path
-      let inferredCategory = '';
-      if (/design-drawings\//i.test(objectPath)) {
-        inferredCategory = 'DESIGN';
-      } else if (/3d-models\//i.test(objectPath)) {
-        inferredCategory = '3D';
-      } else if (/extras\//i.test(objectPath)) {
-        inferredCategory = 'EXTRA';
-      }
-
-      try {
-        await batchUpsertDrawings([
-          {
-            clientId: cleanClientId,
-            projectId: Number(cleanProjectId),
-            packageId: cleanPackageId != null ? Number(cleanPackageId) : null,
-            drgNo: drawingBase,
-            category: inferredCategory || '',
-            revision: null,
-            fileNames: [fileName],
-            issueDate: null,
-          },
-        ]);
-      } catch (err) {
-        console.warn('Failed to batchUpsertDrawings from uploadJob:', err?.message || err);
-      }
-    } catch (fallbackErr) {
-      console.warn('Failed to upsert ProjectDrawing:', fallbackErr);
-      // Non-critical, continue
-    }
-  }
+  // NOTE: Design drawing upserts are handled by publish-job only
+  // Removed duplicate upsert logic to prevent triple insertion
 
   // Optional: maintain separate upload table if present
   try {

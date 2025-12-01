@@ -780,20 +780,8 @@ const TransmittalForm = () => {
         }))
         .filter((e) => e.drgNo);
 
-      if (clientIdNum && projectIdNum && entriesToUpsert.length > 0) {
-        const pkgIdNum = await resolvePackageId(projectIdNum);
-        // Fire-and-forget; don't block the download if this fails
-        fetch("/api/project-drawings", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            clientId: clientIdNum,
-            projectId: projectIdNum,
-            packageId: pkgIdNum,
-            entries: entriesToUpsert,
-          }),
-        }).catch(() => {});
-      }
+      // NOTE: Publish job is already handled via /api/jobs/enqueue above
+      // Removed duplicate /api/project-drawings call to prevent double processing
     } catch {}
 
     // --- ZIP LOGIC ---
@@ -1050,26 +1038,74 @@ const TransmittalForm = () => {
       const pkgIdResolved = await resolvePackageId(projectIdToSend);
 
       if (entriesToUpsert.length > 0) {
-        // Enqueue publish-job only (no fallback to direct upsert). Worker owns DB writes.
-        const enqueueResp = await fetch("/api/jobs/enqueue", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            type: "publish-job",
-            payload: {
-              clientId: Number(clientId),
-              projectId: Number(projectIdToSend),
-              packageId: pkgIdResolved,
-              drawings: entriesToUpsert,
-            },
-          }),
-        });
-        if (!enqueueResp.ok) throw new Error("Failed to enqueue publish-job");
-        const { jobId: publishJobId } = await enqueueResp.json();
-        console.log("Enqueued publish-job", publishJobId);
+        console.log(`[TransmittalForm] Checking if ${entriesToUpsert.length} drawings need publishing`);
+        
+        // Check if drawings are already published to avoid duplicate publish-jobs
+        // This prevents the second publish-job when drawings were already processed from PublishDrawing component
+        try {
+          const checkResp = await fetch(`/api/project-drawings?projectId=${projectIdToSend}&packageId=${pkgIdResolved || ''}&all=false`);
+          const existingDrawings = checkResp.ok ? await checkResp.json() : [];
+          
+          // Filter out entries that already exist with the same drgNo and revision
+          const existingMap = new Set();
+          (existingDrawings || []).forEach(d => {
+            if (d.drgNo && d.revision) {
+              existingMap.add(`${d.drgNo}:${d.revision}`);
+            }
+          });
+          
+          const newEntries = entriesToUpsert.filter(entry => {
+            const key = `${entry.drgNo || ''}:${entry.revision || ''}`;
+            return !existingMap.has(key);
+          });
+          
+          if (newEntries.length > 0) {
+            console.log(`[TransmittalForm] Publishing ${newEntries.length} new drawings (${entriesToUpsert.length - newEntries.length} already exist)`);
+            
+            // Enqueue publish-job only for truly new drawings
+            const enqueueResp = await fetch("/api/jobs/enqueue", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                type: "publish-job",
+                payload: {
+                  clientId: Number(clientId),
+                  projectId: Number(projectIdToSend),
+                  packageId: pkgIdResolved,
+                  drawings: newEntries,
+                },
+              }),
+            });
+            if (!enqueueResp.ok) throw new Error("Failed to enqueue publish-job");
+            const { jobId: publishJobId } = await enqueueResp.json();
+            console.log(`[TransmittalForm] Enqueued publish-job ${publishJobId} for ${newEntries.length} new drawings`);
+          } else {
+            console.log("[TransmittalForm] All drawings already exist, skipping publish-job");
+          }
+        } catch (error) {
+          console.warn("[TransmittalForm] Failed to check existing drawings, proceeding with publish-job:", error);
+          
+          // Fallback: still enqueue the job if check fails
+          const enqueueResp = await fetch("/api/jobs/enqueue", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              type: "publish-job",
+              payload: {
+                clientId: Number(clientId),
+                projectId: Number(projectIdToSend),
+                packageId: pkgIdResolved,
+                drawings: entriesToUpsert,
+              },
+            }),
+          });
+          if (!enqueueResp.ok) throw new Error("Failed to enqueue publish-job");
+          const { jobId: publishJobId } = await enqueueResp.json();
+          console.log(`[TransmittalForm] Enqueued fallback publish-job ${publishJobId}`);
+        }
       } else {
         console.log(
-          "No drawings with files selected to publish; skipping publish-job enqueue."
+          "[TransmittalForm] No drawings with files selected to publish; skipping publish-job enqueue."
         );
       }
 

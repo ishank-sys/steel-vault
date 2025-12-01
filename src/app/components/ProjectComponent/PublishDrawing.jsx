@@ -1185,37 +1185,9 @@ const PublishDrawing = () => {
     setPendingExtraFiles([]);
     if (pdfDrawingsInputRef.current) pdfDrawingsInputRef.current.value = "";
 
-    // Fire-and-forget: enqueue publish-job so worker logs these matched files
-    (async () => {
-      try {
-        const cid =
-          selectedClientId != null && /^\d+$/.test(String(selectedClientId))
-            ? Number(selectedClientId)
-            : null;
-        const pid =
-          selectedProjectId != null ? Number(selectedProjectId) : null;
-        const pkg =
-          selectedPackageId != null && /^\d+$/.test(String(selectedPackageId))
-            ? Number(selectedPackageId)
-            : undefined;
-        if (!cid || !pid || !entriesToLog.length) return;
-        await fetch("/api/jobs/enqueue", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            type: "publish-job",
-            payload: {
-              clientId: cid,
-              projectId: pid,
-              packageId: pkg,
-              drawings: entriesToLog,
-            },
-          }),
-        });
-      } catch (e) {
-        console.warn("enqueue publish-job failed:", e?.message || e);
-      }
-    })();
+    // Note: Drawings are only staged locally here. They will be published to the database
+    // when the user explicitly clicks "Publish" in TransmittalForm.jsx to avoid duplicates.
+    console.log(`[PublishDrawing] Attached ${matchedFiles.length} PDFs to drawings. Drawings staged locally for publishing.`);
   }, [
     selectedFormat,
     pendingExtraFiles,
